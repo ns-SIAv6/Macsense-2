@@ -222,6 +222,12 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
     }
 }
 
+/**
+ * Displays selectable global modes and highlights the currently selected mode.
+ *
+ * @param selectedMode The mode currently selected.
+ * @param onModeSelect Called with the mode selected by the user.
+ */
 @Composable
 fun GlobalModesRow(selectedMode: String, onModeSelect: (String) -> Unit) {
     val modes = listOf("Write", "Record", "Produce", "Mix", "Master", "Video", "Business")
@@ -279,11 +285,11 @@ fun GlobalModesRow(selectedMode: String, onModeSelect: (String) -> Unit) {
 }
 
 /**
- * Displays the studio navigation rail with menu items and a draggable width.
+ * Displays the studio navigation rail with collapsible and resizable controls.
  *
  * @param width The current width of the navigation rail.
- * @param onCollapse Called when the rail collapse control is selected.
- * @param onWidthChange Called with the updated width after the rail is resized.
+ * @param onCollapse Called when the collapse control is selected.
+ * @param onWidthChange Called with the updated width after resizing.
  */
 @Composable
 fun LeftRailContent(

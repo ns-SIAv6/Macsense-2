@@ -145,6 +145,12 @@ object SongwritingEngine {
         return pools[firstChar] ?: listOf("beat", "bar", "bounce", "bold", "blueprint")
     }
 
+    /**
+     * Generates a randomized songwriting continuation for the requested genre.
+     *
+     * @param genre The genre used to select the continuation style; unrecognized genres use Rap.
+     * @return A randomly selected continuation line.
+     */
     fun getGeniusContinuation(currentText: String, activeWord: String, genre: String): String {
         val lines = listOf(
             "Rap" to listOf(
@@ -181,6 +187,10 @@ object SongwritingEngine {
  * Displays an interactive lyrics editor with synchronized playback, writing assistance, and word suggestions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Displays the interactive lyrics-writing studio with editing, synchronized playback,
+ * genre-based continuation generation, and word suggestions.
+ */
 @Composable
 fun LyricsStudioScreen() {
     var lyricsText by remember { mutableStateOf(

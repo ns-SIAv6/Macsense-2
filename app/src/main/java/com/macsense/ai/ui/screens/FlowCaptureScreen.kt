@@ -42,6 +42,11 @@ import com.macsense.ai.ui.viewmodel.RecordSession
 import kotlin.math.sin
 
 class FlowCaptureViewModelFactory(private val context: android.content.Context) : androidx.lifecycle.ViewModelProvider.Factory {
+    /**
+     * Creates a [FlowCaptureViewModel] using the configured context.
+     *
+     * @return The created [FlowCaptureViewModel].
+     */
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
         return FlowCaptureViewModel(context) as T
     }
@@ -53,6 +58,11 @@ class FlowCaptureViewModelFactory(private val context: android.content.Context) 
  * @param viewModel The view model that provides recording state and handles capture actions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Displays the vocal capture interface and manages recorded takes and capture settings.
+ *
+ * @param viewModel The view model that provides capture state and handles user actions.
+ */
 @Composable
 fun FlowCaptureScreen(
     viewModel: FlowCaptureViewModel = viewModel(
