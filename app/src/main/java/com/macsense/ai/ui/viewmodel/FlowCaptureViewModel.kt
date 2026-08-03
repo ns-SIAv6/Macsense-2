@@ -1,5 +1,6 @@
 package com.macsense.ai.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -9,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.random.Random
 
 data class RecordSession(
@@ -21,7 +24,8 @@ data class RecordSession(
     val isAligned: Boolean
 )
 
-class FlowCaptureViewModel : ViewModel() {
+class FlowCaptureViewModel(private val context: Context) : ViewModel() {
+    private val takeStore = context.getSharedPreferences("capture_state", Context.MODE_PRIVATE)
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
     
@@ -43,7 +47,7 @@ class FlowCaptureViewModel : ViewModel() {
     private val _autoAlignEnabled = MutableStateFlow(true)
     val autoAlignEnabled: StateFlow<Boolean> = _autoAlignEnabled.asStateFlow()
     
-    private val _recordedTakes = MutableStateFlow<List<RecordSession>>(emptyList())
+    private val _recordedTakes = MutableStateFlow(loadTakes())
     val recordedTakes: StateFlow<List<RecordSession>> = _recordedTakes.asStateFlow()
     
     private var recordJob: Job? = null
@@ -95,6 +99,7 @@ class FlowCaptureViewModel : ViewModel() {
                 isAligned = _autoAlignEnabled.value
             )
             _recordedTakes.value = _recordedTakes.value + take
+            persistTakes()
         }
     }
     
@@ -116,8 +121,32 @@ class FlowCaptureViewModel : ViewModel() {
     
     fun deleteTake(id: String) {
         _recordedTakes.value = _recordedTakes.value.filter { it.id != id }
+        persistTakes()
     }
     
+
+    private fun persistTakes() {
+        val json = JSONArray().apply {
+            _recordedTakes.value.forEach { take ->
+                put(JSONObject().apply {
+                    put("id", take.id); put("duration", take.durationSeconds); put("bpm", take.autoBpm)
+                    put("cadence", take.cadenceStyle); put("performance", take.performanceStyle)
+                    put("quantize", take.quantizeFeel); put("aligned", take.isAligned)
+                })
+            }
+        }
+        takeStore.edit().putString("takes", json.toString()).apply()
+    }
+
+    private fun loadTakes(): List<RecordSession> = runCatching {
+        val json = JSONArray(takeStore.getString("takes", "[]"))
+        List(json.length()) { index ->
+            val take = json.getJSONObject(index)
+            RecordSession(take.getString("id"), take.getDouble("duration"), take.getDouble("bpm"),
+                take.getString("cadence"), take.getString("performance"), take.getString("quantize"), take.getBoolean("aligned"))
+        }
+    }.getOrDefault(emptyList())
+
     override fun onCleared() {
         super.onCleared()
         recordJob?.cancel()
