@@ -57,6 +57,11 @@ val GreenActive = Color(0xFF10B981)
 val TextPrimary = Color(0xFFF3F4F6)
 val TextSecondary = Color(0xFF9CA3AF)
 
+/**
+ * Displays the main vertical digital audio workstation interface.
+ *
+ * @param viewModel The view model providing playback, timeline, section, and audio visualization state.
+ */
 @Composable
 fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -273,6 +278,13 @@ fun GlobalModesRow(selectedMode: String, onModeSelect: (String) -> Unit) {
     }
 }
 
+/**
+ * Displays the studio navigation rail with menu items and a draggable width.
+ *
+ * @param width The current width of the navigation rail.
+ * @param onCollapse Called when the rail collapse control is selected.
+ * @param onWidthChange Called with the updated width after the rail is resized.
+ */
 @Composable
 fun LeftRailContent(
     width: androidx.compose.ui.unit.Dp,

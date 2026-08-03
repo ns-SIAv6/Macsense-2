@@ -47,6 +47,11 @@ class FlowCaptureViewModelFactory(private val context: android.content.Context) 
     }
 }
 
+/**
+ * Displays the vocal capture interface for recording, configuring, and managing takes.
+ *
+ * @param viewModel The view model that provides recording state and handles capture actions.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlowCaptureScreen(

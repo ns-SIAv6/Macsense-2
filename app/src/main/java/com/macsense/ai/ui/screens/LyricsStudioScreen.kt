@@ -177,6 +177,9 @@ object SongwritingEngine {
     }
 }
 
+/**
+ * Displays an interactive lyrics editor with synchronized playback, writing assistance, and word suggestions.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LyricsStudioScreen() {
