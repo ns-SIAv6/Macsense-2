@@ -15,6 +15,7 @@ class AudioCapture(
     @Volatile private var capturing = false
 
     @Synchronized
+    @Suppress("MissingPermission")
     fun start(): Boolean {
         if (capturing) return false
         val minimumBuffer = AudioRecord.getMinBufferSize(

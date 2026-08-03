@@ -199,7 +199,7 @@ fun FlowCaptureScreen(
                             }
                         } else {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                                itemsIndexed(recordedTakes) { _, take -> TakeItemRow(take) { viewModel.deleteTake(take.id) } }
+                                itemsIndexed(recordedTakes, key = { _, take -> take.id }) { _, take -> TakeItemRow(take) { viewModel.deleteTake(take.id) } }
                             }
                         }
                     }

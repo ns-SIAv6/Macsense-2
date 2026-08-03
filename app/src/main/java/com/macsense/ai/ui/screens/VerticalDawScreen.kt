@@ -134,7 +134,7 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                                 .padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            itemsIndexed(sections) { index, section ->
+                            itemsIndexed(sections, key = { _, section -> section.id }) { index, section ->
                                 SectionCard(
                                     section = section,
                                     isPlayingNow = isPlaying && (barPosition % sections.size == index),
@@ -323,7 +323,7 @@ fun LeftRailContent(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            itemsIndexed(menuItems) { _, item ->
+            itemsIndexed(menuItems, key = { _, item -> item.first }) { _, item ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

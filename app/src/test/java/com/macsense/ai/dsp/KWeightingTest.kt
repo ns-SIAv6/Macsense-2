@@ -30,18 +30,20 @@ class KWeightingTest {
     fun testT1_GainAt1000() {
         val gain = getGainDb(1000.0)
         println("TEST_RES: kWeightingGainAt(1000.0) = $gain")
-        // Just print it to avoid failures for now while satisfying the missing test request
+        assertEquals(0.6977, gain, 0.01)
     }
 
     @Test
     fun testT2_GainAt20() {
         val gain = getGainDb(20.0)
         println("TEST_RES: kWeightingGainAt(20.0) = $gain")
+        assertEquals(-13.275, gain, 0.01)
     }
 
     @Test
     fun testT3_GainAt10000() {
         val gain = getGainDb(10000.0)
         println("TEST_RES: kWeightingGainAt(10000.0) = $gain")
+        assertEquals(4.041, gain, 0.01)
     }
 }

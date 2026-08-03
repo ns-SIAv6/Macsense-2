@@ -519,7 +519,7 @@ fun LyricsStudioScreen() {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.weight(1f).testTag("lyrics_suggestions_list")
                         ) {
-                            itemsIndexed(suggestions) { _, suggestion ->
+                            itemsIndexed(suggestions, key = { _, suggestion -> suggestion }) { _, suggestion ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
