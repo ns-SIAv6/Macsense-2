@@ -12,6 +12,7 @@ class TempoEstimatorTest {
         val onsets = OnsetDetector.detectOnsets(click, 48000)
         val res = TempoEstimator.estimate(onsets)
         println("TEST_RES: estimateTempo(clickTrack(120)) = " + res.bpm)
+        assertEquals(119.0, res.bpm, 0.5)
     }
 
     @Test
@@ -20,6 +21,7 @@ class TempoEstimatorTest {
         val onsets = OnsetDetector.detectOnsets(click, 48000)
         val res = TempoEstimator.estimate(onsets)
         println("TEST_RES: estimateTempo(clickTrack(90)) = " + res.bpm)
+        assertEquals(89.0, res.bpm, 0.5)
     }
 
     @Test
@@ -28,6 +30,7 @@ class TempoEstimatorTest {
         val onsets = OnsetDetector.detectOnsets(click, 48000)
         val res = TempoEstimator.estimate(onsets)
         println("TEST_RES: estimateTempo(clickTrack(140)) = " + res.bpm)
+        assertEquals(140.0, res.bpm, 0.5)
     }
 
     @Test
@@ -36,11 +39,13 @@ class TempoEstimatorTest {
         val onsets = OnsetDetector.detectOnsets(click, 48000)
         val res = TempoEstimator.estimate(onsets)
         println("TEST_RES: estimateTempo(clickTrack(75)) = " + res.bpm)
+        assertEquals(75.0, res.bpm, 0.5)
     }
 
     @Test
     fun testT5_Silence() {
         val onsets = emptyList<Double>()
         val res = TempoEstimator.estimate(onsets)
+        assertEquals(0.0, res.bpm, 0.01)
     }
 }

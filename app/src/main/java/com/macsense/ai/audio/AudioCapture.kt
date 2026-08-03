@@ -14,7 +14,13 @@ class AudioCapture(
     private val samples = ArrayList<Double>()
     @Volatile private var capturing = false
 
+    /**
+     * Starts capturing microphone audio in the background.
+     *
+     * @return `true` if capture starts successfully, `false` if capture is already active or initialization fails.
+     */
     @Synchronized
+    @Suppress("MissingPermission")
     fun start(): Boolean {
         if (capturing) return false
         val minimumBuffer = AudioRecord.getMinBufferSize(

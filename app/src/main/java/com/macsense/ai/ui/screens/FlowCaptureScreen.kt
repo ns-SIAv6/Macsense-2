@@ -47,6 +47,11 @@ class FlowCaptureViewModelFactory(private val context: android.content.Context) 
     }
 }
 
+/**
+ * Displays the vocal capture interface for recording, configuring, and managing takes.
+ *
+ * @param viewModel The view model that provides recording state and handles capture actions.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlowCaptureScreen(
@@ -199,7 +204,7 @@ fun FlowCaptureScreen(
                             }
                         } else {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                                itemsIndexed(recordedTakes) { _, take -> TakeItemRow(take) { viewModel.deleteTake(take.id) } }
+                                itemsIndexed(recordedTakes, key = { _, take -> take.id }) { _, take -> TakeItemRow(take) { viewModel.deleteTake(take.id) } }
                             }
                         }
                     }
