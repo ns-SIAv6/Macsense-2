@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -296,14 +300,18 @@ fun FlowCaptureScreen(viewModel: FlowCaptureViewModel = viewModel()) {
 
 @Composable
 fun LiveCaptureWaveform(isRecording: Boolean) {
-    val phase by rememberInfiniteTransition(label = "").animateFloat(
-        initialValue = 0f,
-        targetValue = 2f * Math.PI.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = ""
-    )
+    val phase = if (isRecording) {
+        rememberInfiniteTransition(label = "capture-waveform").animateFloat(
+            initialValue = 0f,
+            targetValue = 2f * Math.PI.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ), label = "capture-phase"
+        ).value
+    } else {
+        0f
+    }
 
     Canvas(
         modifier = Modifier
@@ -354,6 +362,11 @@ fun FlowStyleSelector(items: List<String>, selectedItem: String, onSelected: (St
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (isSelected) PurpleNeon else SurfaceSubtle)
                     .clickable { onSelected(item) }
+                    .semantics {
+                        // Expose segmented choices as radio buttons to TalkBack and keyboard users.
+                        role = Role.RadioButton
+                        selected = isSelected
+                    }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
