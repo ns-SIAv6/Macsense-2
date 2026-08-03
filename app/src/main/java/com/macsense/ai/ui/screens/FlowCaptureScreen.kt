@@ -396,6 +396,8 @@ fun FlowStyleSelector(items: List<String>, selectedItem: String, onSelected: (St
 
 @Composable
 fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -420,13 +422,24 @@ fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
             }
         }
 
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Delete take ${take.id.uppercase()}",
-                tint = Color.Red.copy(alpha = 0.7f),
-                modifier = Modifier.size(18.dp)
-            )
+        IconButton(onClick = { showDeleteConfirmation = true }) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete take ${take.id.uppercase()}", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete ${take.id.uppercase()}?") },
+            text = { Text("This take will be removed from the shelf.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteConfirmation = false; onDelete() }) {
+                    Text("Delete", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
+            }
+        )
     }
 }
