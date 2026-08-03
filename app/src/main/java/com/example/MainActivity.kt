@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,22 +18,46 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.viewmodel.MacSenseViewModel
+import com.example.data.viewmodel.SoundBreederViewModel
+import com.example.ui.components.VoiceCommandBar
 import com.example.ui.components.WhisperChipBar
 import com.example.ui.screens.*
 import com.example.ui.theme.MacSenseTheme
 
 class MainActivity : ComponentActivity() {
+
+
+    private var soundBreederViewModel: SoundBreederViewModel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
+            val breederVm: SoundBreederViewModel = viewModel()
+            soundBreederViewModel = breederVm
+
             MacSenseTheme {
-                MacSenseApp()
+                MacSenseApp(breederViewModel = breederVm)
             }
         }
     }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        soundBreederViewModel?.let {
+            if (it.processKeyEvent(keyCode, isDown = true)) return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        soundBreederViewModel?.let {
+            if (it.processKeyEvent(keyCode, isDown = false)) return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
 }
+
 
 enum class MacSenseNavTab(
     val title: String,
@@ -53,7 +78,8 @@ enum class MacSenseNavTab(
 
 @Composable
 fun MacSenseApp(
-    viewModel: MacSenseViewModel = viewModel()
+    viewModel: MacSenseViewModel = viewModel(),
+    breederViewModel: SoundBreederViewModel = viewModel()
 ) {
     var currentTab by remember { mutableStateOf(MacSenseNavTab.VERTICAL_DAW) }
 
@@ -69,11 +95,14 @@ fun MacSenseApp(
     val bpm by viewModel.bpm.collectAsStateWithLifecycle()
     val activeSectionIndex by viewModel.activeSectionIndex.collectAsStateWithLifecycle()
 
-    val parentA by viewModel.parentA.collectAsStateWithLifecycle()
-    val parentB by viewModel.parentB.collectAsStateWithLifecycle()
-    val breedWeight by viewModel.breedWeight.collectAsStateWithLifecycle()
-    val mutationFactor by viewModel.mutationFactor.collectAsStateWithLifecycle()
-    val lastBredGenome by viewModel.lastBredGenome.collectAsStateWithLifecycle()
+    val parentA by breederViewModel.parentA.collectAsStateWithLifecycle()
+    val parentB by breederViewModel.parentB.collectAsStateWithLifecycle()
+    val breedWeight by breederViewModel.breedWeight.collectAsStateWithLifecycle()
+    val mutationFactor by breederViewModel.mutationFactor.collectAsStateWithLifecycle()
+    val lastBredGenome by breederViewModel.lastBredGenome.collectAsStateWithLifecycle()
+    val breedingHistory by breederViewModel.breedingHistory.collectAsStateWithLifecycle()
+    val midiState by breederViewModel.midiState.collectAsStateWithLifecycle()
+
 
     val whisperChips by viewModel.whisperChips.collectAsStateWithLifecycle()
     val ariAiResponse by viewModel.ariAiResponse.collectAsStateWithLifecycle()
@@ -97,11 +126,19 @@ fun MacSenseApp(
     val integrityHash by viewModel.integrityHash.collectAsStateWithLifecycle()
     val mtbfHours by viewModel.mtbfHours.collectAsStateWithLifecycle()
 
+    val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             Column {
                 Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                VoiceCommandBar(
+                    voiceState = voiceState,
+                    onStartListening = { viewModel.startVoiceCommand() },
+                    onStopListening = { viewModel.stopVoiceCommand() },
+                    onSpokenCommandReady = { viewModel.processSpokenVoiceCommand(it) }
+                )
                 WhisperChipBar(
                     chips = whisperChips,
                     onActionClick = { chip ->
@@ -164,12 +201,15 @@ fun MacSenseApp(
                     breedWeight = breedWeight,
                     mutationFactor = mutationFactor,
                     lastBredGenome = lastBredGenome,
-                    onSelectParentA = { viewModel.selectParentA(it) },
-                    onSelectParentB = { viewModel.selectParentB(it) },
-                    onBreedWeightChange = { viewModel.setBreedWeight(it) },
-                    onMutationChange = { viewModel.setMutationFactor(it) },
-                    onBreedClick = { viewModel.breedCurrentParents() },
-                    onPreviewGenome = { viewModel.previewGenome(it) }
+                    breedingHistory = breedingHistory,
+                    midiState = midiState,
+                    onSelectParentA = { breederViewModel.selectParentA(it) },
+                    onSelectParentB = { breederViewModel.selectParentB(it) },
+                    onBreedWeightChange = { breederViewModel.setBreedWeight(it) },
+                    onMutationChange = { breederViewModel.setMutationFactor(it) },
+                    onBreedClick = { breederViewModel.breedCurrentParents() },
+                    onPreviewGenome = { breederViewModel.previewGenome(it) },
+                    onVirtualCcChange = { cc, valNorm -> breederViewModel.setVirtualCc(cc, valNorm) }
                 )
 
                 MacSenseNavTab.GRAVEYARD -> LazarusGraveyardScreen(

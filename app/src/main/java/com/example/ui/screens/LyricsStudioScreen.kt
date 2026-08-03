@@ -12,7 +12,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -262,8 +264,8 @@ fun LyricsStudioScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Default.Undo, "Undo", tint = TextMuted, modifier = Modifier.size(16.dp))
-                        Icon(Icons.Default.Redo, "Redo", tint = TextMuted, modifier = Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.Undo, "Undo", tint = TextMuted, modifier = Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.Redo, "Redo", tint = TextMuted, modifier = Modifier.size(16.dp))
                         Icon(Icons.Default.ContentCut, "Cut", tint = TextMuted, modifier = Modifier.size(16.dp))
                         Icon(Icons.Default.ContentCopy, "Copy", tint = TextMuted, modifier = Modifier.size(16.dp))
                         Icon(Icons.Default.ContentPaste, "Paste", tint = TextMuted, modifier = Modifier.size(16.dp))

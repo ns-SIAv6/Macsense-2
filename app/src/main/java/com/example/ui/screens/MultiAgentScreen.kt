@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -146,7 +146,7 @@ fun MultiAgentScreen(
                 if (isAriLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), color = TextPrimary, strokeWidth = 2.dp)
                 } else {
-                    Icon(imageVector = Icons.Default.Send, contentDescription = "Send", tint = TextPrimary)
+                    Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = TextPrimary)
                 }
             }
         }

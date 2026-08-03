@@ -54,4 +54,19 @@ interface MacSenseDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVersionNode(node: VersionNodeEntity)
+
+    // --- Breeding History ---
+    @Query("SELECT * FROM breeding_history ORDER BY timestamp DESC")
+    fun getBreedingHistory(): Flow<List<BreedingHistoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBreedingHistory(history: BreedingHistoryEntity)
+
+    // --- MIDI Mappings ---
+    @Query("SELECT * FROM midi_mappings")
+    fun getMidiMappings(): Flow<List<MidiMappingEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMidiMapping(mapping: MidiMappingEntity)
+
 }

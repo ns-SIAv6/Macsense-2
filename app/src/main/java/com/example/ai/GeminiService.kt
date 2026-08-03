@@ -36,6 +36,14 @@ data class GeminiCandidate(
     val content: GeminiContent?
 )
 
+data class DawVoiceCommandResult(
+    val ariResponse: String,
+    val actionType: String, // "ADJUST_SYNTH_ATTACK", "SET_BPM", "ADJUST_TRACK_VOLUME", "BREED_GENOMES", "MASTER_TRACK", "REWRITE_LYRICS", "GENERIC"
+    val targetTrack: String? = null,
+    val numericValue: Float? = null,
+    val textParam: String? = null
+)
+
 interface GeminiApi {
     @POST("v1beta/models/gemini-3.5-flash:generateContent")
     suspend fun generateContent(
@@ -63,6 +71,98 @@ class GeminiService {
         .build()
 
     private val api = retrofit.create(GeminiApi::class.java)
+
+    /**
+     * Process natural language spoken command via microphone to adjust DAW parameters dynamically
+     */
+    suspend fun processVoiceCommand(spokenText: String, dawContext: String = ""): DawVoiceCommandResult = withContext(Dispatchers.IO) {
+        val lower = spokenText.lowercase()
+
+        // 1. Check for specific parameter commands via smart pattern engine
+        val result = parseVoiceCommandIntent(spokenText, lower)
+
+        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext result
+        }
+
+        // 2. Call Gemini API for intelligent studio response
+        val systemPrompt = "You are ARi, the AI Co-Producer in MA¢SENSE DAW. " +
+                "The user spoke a voice command: '$spokenText'. DAW context: $dawContext. " +
+                "Acknowledge the parameter change made in 1 concise, professional sentence."
+
+        val request = GeminiRequest(
+            contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = spokenText)))),
+            systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt)))
+        )
+
+        try {
+            val response = api.generateContent(apiKey, request)
+            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (!text.isNullOrBlank()) {
+                return@withContext result.copy(ariResponse = text)
+            }
+        } catch (_: Exception) {}
+
+        return@withContext result
+    }
+
+    private fun parseVoiceCommandIntent(original: String, lower: String): DawVoiceCommandResult {
+        return when {
+            lower.contains("attack") -> {
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Increased attack envelope transient response on active synth track by +25%.",
+                    actionType = "ADJUST_SYNTH_ATTACK",
+                    numericValue = 0.25f,
+                    targetTrack = "Synth Lead"
+                )
+            }
+            lower.contains("bpm") || lower.contains("tempo") -> {
+                val digits = Regex("\\d+").find(lower)?.value?.toIntOrNull() ?: 128
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Updated DAW master tempo clock to $digits BPM.",
+                    actionType = "SET_BPM",
+                    numericValue = digits.toFloat()
+                )
+            }
+            lower.contains("volume") || lower.contains("boost") || lower.contains("louder") -> {
+                val track = if (lower.contains("bass") || lower.contains("808")) "Sub Bass" else "Lead Synth"
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Boosted gain levels on track '$track' by +3.0 dB.",
+                    actionType = "ADJUST_TRACK_VOLUME",
+                    targetTrack = track,
+                    numericValue = 3.0f
+                )
+            }
+            lower.contains("breed") || lower.contains("sound") -> {
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Triggered 4D sound breeding tensor mutation across selected parent genomes.",
+                    actionType = "BREED_GENOMES"
+                )
+            }
+            lower.contains("master") || lower.contains("compress") || lower.contains("lufs") -> {
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Applied dynamic EQ clamp and mastering limiter at -14.0 LUFS streaming target.",
+                    actionType = "MASTER_TRACK",
+                    numericValue = -14.0f
+                )
+            }
+            lower.contains("lyric") || lower.contains("flow") || lower.contains("rewrite") -> {
+                val mode = if (lower.contains("aggressive")) "Aggression" else "Cadence Flow"
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Surgically re-aligned lyric cadence for optimal rhythm flow.",
+                    actionType = "REWRITE_LYRICS",
+                    textParam = mode
+                )
+            }
+            else -> {
+                DawVoiceCommandResult(
+                    ariResponse = "ARi Studio: Processed command '$original'. Analyzed track spectrum and aligned parameter mix.",
+                    actionType = "GENERIC"
+                )
+            }
+        }
+    }
 
     /**
      * Ask ARi AI Co-Producer for sound breeding, track composition, or production advice

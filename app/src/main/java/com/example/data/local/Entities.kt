@@ -77,3 +77,30 @@ data class VersionNodeEntity(
     val timestamp: Long,
     val isCurrent: Boolean
 )
+
+@Entity(tableName = "breeding_history")
+data class BreedingHistoryEntity(
+    @PrimaryKey val id: String,
+    val parentAId: String,
+    val parentAName: String,
+    val parentBId: String,
+    val parentBName: String,
+    val childId: String,
+    val childName: String,
+    val breedWeight: Float,
+    val mutationFactor: Float,
+    val generation: Int,
+    val timestamp: Long
+)
+
+@Entity(tableName = "midi_mappings")
+data class MidiMappingEntity(
+    @PrimaryKey val id: String,
+    val controllerName: String,
+    val ccNumber: Int,
+    val parameterTarget: String,
+    val minValue: Float,
+    val maxValue: Float,
+    val channel: Int
+)
+

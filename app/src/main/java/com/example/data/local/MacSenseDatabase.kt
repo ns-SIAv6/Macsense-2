@@ -11,7 +11,9 @@ import androidx.room.RoomDatabase
         ProjectEntity::class,
         TrackEntity::class,
         LyricEntity::class,
-        VersionNodeEntity::class
+        VersionNodeEntity::class,
+        BreedingHistoryEntity::class,
+        MidiMappingEntity::class
     ],
     version = 1,
     exportSchema = false

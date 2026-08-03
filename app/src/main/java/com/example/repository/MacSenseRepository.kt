@@ -1,10 +1,12 @@
 package com.example.repository
 
+import com.example.data.local.BreedingHistoryEntity
+import com.example.data.local.LyricEntity
 import com.example.data.local.MacSenseDao
+import com.example.data.local.MidiMappingEntity
 import com.example.data.local.ProjectEntity
 import com.example.data.local.SoundGenomeEntity
 import com.example.data.local.TrackEntity
-import com.example.data.local.LyricEntity
 import com.example.data.local.VersionNodeEntity
 import com.example.data.model.*
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +21,10 @@ class MacSenseRepository(private val dao: MacSenseDao) {
     val extinctGenomes: Flow<List<SoundGenome>> = dao.getExtinctGenomes().map { entities ->
         entities.map { it.toModel() }
     }
+
+    val breedingHistory: Flow<List<BreedingHistoryEntity>> = dao.getBreedingHistory()
+
+    val midiMappings: Flow<List<MidiMappingEntity>> = dao.getMidiMappings()
 
     val currentProject: Flow<Project?> = dao.getProjectById("project_master_01").map { entity ->
         entity?.let {
@@ -86,8 +92,46 @@ class MacSenseRepository(private val dao: MacSenseDao) {
     ): SoundGenome {
         val child = SoundGenome.breed(parentA, parentB, weightA, mutationFactor)
         dao.insertGenome(child.toEntity())
+
+        // Save breeding history record in Room
+        val historyRecord = BreedingHistoryEntity(
+            id = "bh_${System.currentTimeMillis()}",
+            parentAId = parentA.id,
+            parentAName = parentA.name,
+            parentBId = parentB.id,
+            parentBName = parentB.name,
+            childId = child.id,
+            childName = child.name,
+            breedWeight = weightA,
+            mutationFactor = mutationFactor,
+            generation = child.generation,
+            timestamp = System.currentTimeMillis()
+        )
+        dao.insertBreedingHistory(historyRecord)
+
         return child
     }
+
+    suspend fun saveMidiMapping(
+        controllerName: String,
+        ccNumber: Int,
+        parameterTarget: String,
+        minValue: Float = 0f,
+        maxValue: Float = 1f,
+        channel: Int = 1
+    ) {
+        val mapping = MidiMappingEntity(
+            id = "mapping_cc_${ccNumber}_${parameterTarget}",
+            controllerName = controllerName,
+            ccNumber = ccNumber,
+            parameterTarget = parameterTarget,
+            minValue = minValue,
+            maxValue = maxValue,
+            channel = channel
+        )
+        dao.insertMidiMapping(mapping)
+    }
+
 
     suspend fun resurrectAndSave(extinctGenome: SoundGenome): SoundGenome {
         val resurrected = SoundGenome.resurrect(extinctGenome)

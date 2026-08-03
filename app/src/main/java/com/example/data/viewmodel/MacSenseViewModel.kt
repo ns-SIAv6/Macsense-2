@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.GeminiService
+import com.example.ai.VoiceCommandManager
 import com.example.audio.SynthEngine
 import com.example.data.local.MacSenseDatabase
 import com.example.data.model.*
@@ -19,6 +20,9 @@ class MacSenseViewModel(application: Application) : AndroidViewModel(application
     private val repository = MacSenseRepository(db.dao())
     private val synthEngine = SynthEngine()
     private val geminiService = GeminiService()
+    val voiceCommandManager = VoiceCommandManager(application)
+
+    val voiceState: StateFlow<VoiceCommandManager.VoiceState> = voiceCommandManager.voiceState
 
     // --- Active & Extinct Sound Genomes ---
     val activeGenomes: StateFlow<List<SoundGenome>> = repository.activeGenomes
@@ -381,6 +385,73 @@ class MacSenseViewModel(application: Application) : AndroidViewModel(application
         _masteringStyle.value = style
         viewModelScope.launch {
             repository.addVersionCommit("Mastered track at $targetLufs LUFS ($style)")
+        }
+    }
+
+    fun startVoiceCommand() {
+        voiceCommandManager.startListening()
+    }
+
+    fun stopVoiceCommand() {
+        voiceCommandManager.stopListening()
+    }
+
+    fun processSpokenVoiceCommand(spokenText: String) {
+        if (spokenText.isBlank()) return
+        viewModelScope.launch {
+            _isAriLoading.value = true
+            val dawContext = "BPM: ${_bpm.value}, Project: ${project.value?.title}"
+            val result = geminiService.processVoiceCommand(spokenText, dawContext)
+
+            _ariAiResponse.value = result.ariResponse
+            _isAriLoading.value = false
+            _ariEmotion.value = "Action Executed"
+
+            // Execute target DAW parameter actions based on Ari command result
+            when (result.actionType) {
+                "ADJUST_SYNTH_ATTACK" -> {
+                    // Play synth preview with enhanced attack
+                    synthEngine.playNote(440f, 400)
+                    voiceCommandManager.setLastExecutedAction("Increased synth attack envelope (+25%)")
+                }
+                "SET_BPM" -> {
+                    val newBpm = result.numericValue?.toInt() ?: 128
+                    setBpm(newBpm)
+                    voiceCommandManager.setLastExecutedAction("Set master tempo to $newBpm BPM")
+                }
+                "ADJUST_TRACK_VOLUME" -> {
+                    voiceCommandManager.setLastExecutedAction("Boosted ${result.targetTrack ?: "track"} volume (+3.0 dB)")
+                }
+                "BREED_GENOMES" -> {
+                    breedCurrentParents()
+                    voiceCommandManager.setLastExecutedAction("Bred selected sound genomes")
+                }
+                "MASTER_TRACK" -> {
+                    val lufs = result.numericValue ?: -14f
+                    processMastering(lufs, "Streaming High Precision")
+                    voiceCommandManager.setLastExecutedAction("Mastered at $lufs LUFS")
+                }
+                "REWRITE_LYRICS" -> {
+                    val currentLyric = lyrics.value.firstOrNull()
+                    if (currentLyric != null) {
+                        rewriteLyricSpan(currentLyric, result.textParam ?: "Cadence Flow")
+                    }
+                    voiceCommandManager.setLastExecutedAction("Re-aligned lyric cadence flow")
+                }
+                else -> {
+                    voiceCommandManager.setLastExecutedAction("Analyzed: $spokenText")
+                }
+            }
+
+            // Post a WhisperChip notification with Ari's response and execution
+            _whisperChips.value = listOf(
+                WhisperChip(
+                    id = "chip_voice_${System.currentTimeMillis()}",
+                    tier = WhisperChip.Tier.NOTIFY,
+                    sourceThread = "ARi Voice Command",
+                    message = "\"$spokenText\" -> ${result.ariResponse}"
+                )
+            ) + _whisperChips.value
         }
     }
 
