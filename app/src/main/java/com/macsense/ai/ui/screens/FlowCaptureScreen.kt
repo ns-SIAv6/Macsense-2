@@ -258,13 +258,25 @@ fun FlowCaptureScreen(viewModel: FlowCaptureViewModel = viewModel()) {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "CAPTURED VOCAL TAKES SHELF",
-                            color = TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "CAPTURED VOCAL TAKES SHELF",
+                                color = TextSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                "${recordedTakes.size} ${if (recordedTakes.size == 1) "take" else "takes"}",
+                                color = CyanNeon,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
 
                         if (recordedTakes.isEmpty()) {
@@ -409,7 +421,12 @@ fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
         }
 
         IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete Take", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Delete take ${take.id.uppercase()}",
+                tint = Color.Red.copy(alpha = 0.7f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
