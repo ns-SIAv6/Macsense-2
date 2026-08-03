@@ -35,24 +35,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-<<<<<<< feat/capture-permission-status
 import androidx.core.content.ContextCompat
-=======
-import androidx.compose.ui.platform.LocalContext
->>>>>>> main
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.macsense.ai.ui.viewmodel.FlowCaptureViewModel
 import com.macsense.ai.ui.viewmodel.RecordSession
 import kotlin.math.sin
 
+class FlowCaptureViewModelFactory(private val context: android.content.Context) : androidx.lifecycle.ViewModelProvider.Factory {
+    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+        return FlowCaptureViewModel(context) as T
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlowCaptureScreen(
     viewModel: FlowCaptureViewModel = viewModel(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
-                FlowCaptureViewModel(LocalContext.current) as T
-        }
+        factory = FlowCaptureViewModelFactory(LocalContext.current)
     )
 ) {
     val isRecording by viewModel.isRecording.collectAsState()
@@ -174,9 +173,6 @@ fun FlowCaptureScreen(
             Column(modifier = Modifier.weight(0.8f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(modifier = Modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = SurfaceDark), border = BorderStroke(1.dp, Color(0x1FA855F7)), shape = RoundedCornerShape(16.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-<<<<<<< feat/capture-permission-status
-                        Text("CAPTURED VOCAL TAKES SHELF", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-=======
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -196,7 +192,6 @@ fun FlowCaptureScreen(
                                 fontFamily = FontFamily.Monospace
                             )
                         }
->>>>>>> main
                         Spacer(modifier = Modifier.height(12.dp))
                         if (recordedTakes.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -247,9 +242,6 @@ fun FlowStyleSelector(items: List<String>, selectedItem: String, onSelected: (St
 
 @Composable
 fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
-<<<<<<< feat/capture-permission-status
-    Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(SurfaceSubtle).border(BorderStroke(1.dp, PurpleNeon.copy(alpha = 0.15f)), RoundedCornerShape(12.dp)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-=======
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     Row(
@@ -262,7 +254,6 @@ fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
->>>>>>> main
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("♫ ", color = CyanNeon, fontSize = 14.sp)
             Spacer(modifier = Modifier.width(8.dp))
@@ -271,15 +262,15 @@ fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
                 Text("Duration: ${String.format("%.1f", take.durationSeconds)}s | BPM: ${String.format("%.1f", take.autoBpm)}", color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
         }
-<<<<<<< feat/capture-permission-status
-        IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete Take", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp)) }
-=======
 
         IconButton(onClick = { showDeleteConfirmation = true }) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete take ${take.id.uppercase()}", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-            Icon(Icons.Default.Delete, contentDescription = "Delete Take", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Delete take ${take.id.uppercase()}",
+                tint = Color.Red.copy(alpha = 0.7f),
+                modifier = Modifier.size(18.dp)
+            )
         }
->>>>>>> main
     }
 
     if (showDeleteConfirmation) {

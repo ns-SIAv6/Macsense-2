@@ -24,6 +24,6 @@ data class SoundGenome(
         parents = listOf(sourceId, other.sourceId)
     )
 
-    fun distanceFrom(other: SoundGenome): Double = listOf(transient - other.transient, harmonicity - other.harmonicity, brightness - other.brightness, dynamics - other.dynamics, stereoWidth - other.stereoWidth).map { it * it }.average().let(::kotlin.math.sqrt)
+    fun distanceFrom(other: SoundGenome): Double = listOf(transient - other.transient, harmonicity - other.harmonicity, brightness - other.brightness, dynamics - other.dynamics, stereoWidth - other.stereoWidth).map { it * it }.average().let { kotlin.math.sqrt(it) }
     enum class Trait { TRANSIENT, HARMONICITY, BRIGHTNESS, DYNAMICS, STEREO_WIDTH }
 }

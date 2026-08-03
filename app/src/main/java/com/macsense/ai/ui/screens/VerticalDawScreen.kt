@@ -38,6 +38,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.macsense.ai.ui.viewmodel.DawViewModel
 import com.macsense.ai.ui.viewmodel.SectionInfo
 import kotlin.math.sin
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 // Colors
 val BackgroundDark = Color(0xFF0A0A12)
@@ -171,6 +174,7 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                             color = Color(0x1FA855F7)
                         )
                         RightToolsContent(
+                            viewModel = viewModel,
                             width = rightToolsWidth,
                             onCollapse = { isRightToolsExpanded = false },
                             onWidthChange = { rightToolsWidth = it }
@@ -669,12 +673,58 @@ fun InstrumentMapLegend() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RightToolsContent(
+    viewModel: DawViewModel,
     width: androidx.compose.ui.unit.Dp,
     onCollapse: () -> Unit,
     onWidthChange: (androidx.compose.ui.unit.Dp) -> Unit
 ) {
+    var activeTab by remember { mutableStateOf(0) } // 0: AI STEMS, 1: CREATORS
+    val tabs = listOf("AI STEMS", "CREATORS")
+    val scope = rememberCoroutineScope()
+
+    // XP State
+    val xpAmount by viewModel.xpAmount.collectAsState()
+    val level = 4
+    val nextLevelXp = 5000
+    val progressXp = xpAmount.toFloat() / nextLevelXp
+
+    // Stem Separator States (Suno/Udio style)
+    var selectedTake by remember { mutableStateOf("Lead Vocal Take") }
+    val takesList = listOf("Lead Vocal Take", "Synth Doubles", "Adlib Track", "Room Acoustic Take")
+    var isStemSplitting by remember { mutableStateOf(false) }
+    var stemSplitComplete by remember { mutableStateOf(false) }
+
+    // Faders states
+    var vocalVol by remember { mutableStateOf(0.8f) }
+    var vocalMuted by remember { mutableStateOf(false) }
+    var vocalSolo by remember { mutableStateOf(false) }
+
+    var drumVol by remember { mutableStateOf(0.75f) }
+    var drumMuted by remember { mutableStateOf(false) }
+    var drumSolo by remember { mutableStateOf(false) }
+
+    var bassVol by remember { mutableStateOf(0.85f) }
+    var bassMuted by remember { mutableStateOf(false) }
+    var bassSolo by remember { mutableStateOf(false) }
+
+    var melodyVol by remember { mutableStateOf(0.65f) }
+    var melodyMuted by remember { mutableStateOf(false) }
+    var melodySolo by remember { mutableStateOf(false) }
+
+    // Creative States
+    var highBoost by remember { mutableStateOf(45f) }
+    val sections by viewModel.sections.collectAsState()
+    var selectedSectionId by remember { mutableStateOf(sections.firstOrNull()?.id ?: "intro") }
+    var aiFeedbackTip by remember { mutableStateOf("Dynamics analysis: Verse-1 transitions sound clean. Try boosting hi-hat intensity.") }
+    var isAnalyzingFeedback by remember { mutableStateOf(false) }
+
+    // Dropdown for Section/Take selection
+    var isSectionDropdownExpanded by remember { mutableStateOf(false) }
+    var isTakeDropdownExpanded by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .width(width)
@@ -683,47 +733,398 @@ fun RightToolsContent(
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    val newWidth = (width - dragAmount.x.toDp()).coerceIn(200.dp, 400.dp)
+                    val newWidth = (width - dragAmount.x.toDp()).coerceIn(240.dp, 400.dp)
                     onWidthChange(newWidth)
                 }
             }
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("EXTRA AI TOOLS", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("EXTRA AI TOOLS", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             IconButton(onClick = onCollapse) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                Icon(Icons.Default.Close, contentDescription = "Close Tools", tint = TextSecondary)
             }
         }
 
-        ToolBoxCard("HIGH EYE OPTIMIZE", Icons.Default.Info, "Enhance high-frequency transients and air presence.")
-        ToolBoxCard("AI feedback engine", Icons.Default.Info, "Analyzing verse-2 transitions...")
-        ToolBoxCard("xp / dynamic level", Icons.Default.Info, "Level 4 Beatmaker: 2,450 XP")
-        ToolBoxCard("signature bar bank", Icons.Default.Settings, "Generate custom bar syncopations.")
-        ToolBoxCard("sound-to-color mapping", Icons.Default.Settings, "Cyan hue active under Lead Synth.")
+        // Tab Selector
+        TabRow(
+            selectedTabIndex = activeTab,
+            containerColor = SurfaceSubtle,
+            contentColor = CyanNeon,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                    color = CyanNeon
+                )
+            },
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).height(36.dp)
+        ) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = activeTab == index,
+                    onClick = { activeTab = index },
+                    text = { Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (activeTab == 0) {
+            // SUNO / UDIO STYLE STEM SPLITTER
+            Text("AI MULTI-TRACK STEM SEPARATOR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            
+            // Dropdown selection of takes
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { isTakeDropdownExpanded = true },
+                    colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
+                    border = BorderStroke(1.dp, Color(0x1FA855F7))
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(selectedTake, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("▼", color = CyanNeon, fontSize = 10.sp)
+                    }
+                }
+                DropdownMenu(
+                    expanded = isTakeDropdownExpanded,
+                    onDismissRequest = { isTakeDropdownExpanded = false },
+                    modifier = Modifier.background(SurfaceSubtle)
+                ) {
+                    takesList.forEach { take ->
+                        DropdownMenuItem(
+                            text = { Text(take, color = TextPrimary, fontSize = 12.sp) },
+                            onClick = {
+                                selectedTake = take
+                                isTakeDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    isStemSplitting = true
+                    stemSplitComplete = false
+                    scope.launch {
+                        delay(1200) // realistic splitting processing
+                        isStemSplitting = false
+                        stemSplitComplete = true
+                        viewModel.addXp(350) // award split XP!
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("stem_split_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = PurpleNeon),
+                enabled = !isStemSplitting
+            ) {
+                if (isStemSplitting) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("EXTRACTING STEMS...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("SPLIT INTO 4 STEMS", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Stem faders deck
+            Text("STEM MIXING DESK", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+
+            if (!stemSplitComplete && !isStemSplitting) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceSubtle)
+                        .border(BorderStroke(1.dp, Color(0x0FA855F7)), RoundedCornerShape(8.dp))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "No split stems active.\nSelect a take above & split to reveal multitrack controls.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    item {
+                        StemFaderRow("VOCALS", vocalVol, vocalMuted, vocalSolo, PurpleNeon, { vocalVol = it }, { vocalMuted = it }, { vocalSolo = it })
+                        StemFaderRow("DRUMS", drumVol, drumMuted, drumSolo, Color(0xFFFBBF24), { drumVol = it }, { drumMuted = it }, { drumSolo = it })
+                        StemFaderRow("BASS", bassVol, bassMuted, bassSolo, Color(0xFFEF4444), { bassVol = it }, { bassMuted = it }, { bassSolo = it })
+                        StemFaderRow("MELODY", melodyVol, melodyMuted, melodySolo, Color(0xFF10B981), { melodyVol = it }, { melodyMuted = it }, { melodySolo = it })
+                    }
+                }
+            }
+        } else {
+            // CREATIVE COMPILATION & TEMPLATE GENERATORS
+            
+            // LEVEL TRACKER CARD
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
+                border = BorderStroke(1.dp, Color(0x3FD946EF))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("LEVEL $level BEATMAKER", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("$xpAmount / $nextLevelXp XP", color = MagentaNeon, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = progressXp.coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = MagentaNeon,
+                        trackColor = BackgroundDark
+                    )
+                }
+            }
+
+            // TRANSIST BOOSTER
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
+                border = BorderStroke(1.dp, Color(0x1F8B5CF6))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("HIGH EYE OPTIMIZE", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Enhance high frequency transients & air presence.", color = TextSecondary, fontSize = 10.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Slider(
+                            value = highBoost,
+                            onValueChange = { highBoost = it },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(activeTrackColor = CyanNeon, thumbColor = CyanNeon)
+                        )
+                        Text("${highBoost.toInt()}%", color = CyanNeon, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(36.dp), textAlign = TextAlign.End)
+                    }
+                }
+            }
+
+            // SIGNATURE BAR BANK (INJECTION SYSTEM)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
+                border = BorderStroke(1.dp, Color(0x1F06B6D4))
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("SIGNATURE BAR BANK", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Auto-inject sequenced drum blueprints into the active section.", color = TextSecondary, fontSize = 10.sp)
+                    
+                    // Select Target Section Dropdown
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { isSectionDropdownExpanded = true },
+                            colors = CardDefaults.cardColors(containerColor = BackgroundDark),
+                            border = BorderStroke(1.dp, Color(0x1F8B5CF6))
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val sectionName = sections.firstOrNull { it.id == selectedSectionId }?.name ?: "Intro"
+                                Text("Section: $sectionName", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("▼", color = PurpleNeon, fontSize = 9.sp)
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = isSectionDropdownExpanded,
+                            onDismissRequest = { isSectionDropdownExpanded = false },
+                            modifier = Modifier.background(SurfaceDark)
+                        ) {
+                            sections.forEach { section ->
+                                DropdownMenuItem(
+                                    text = { Text(section.name, color = TextPrimary, fontSize = 12.sp) },
+                                    onClick = {
+                                        selectedSectionId = section.id
+                                        isSectionDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Preset Buttons
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Trap 16ths", "BoomBap Swing", "Synthwave 8ths", "Reggaeton 3-2").chunked(2).forEach { rowPresets ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                rowPresets.forEach { preset ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(BackgroundDark)
+                                            .border(BorderStroke(1.dp, CyanNeon.copy(alpha = 0.3f)), RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                viewModel.applyRhythmPreset(selectedSectionId, preset)
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(preset, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // REAL-TIME AI CRITIQUE ENGINE
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
+                border = BorderStroke(1.dp, Color(0x1FA855F7))
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("AI FEEDBACK ENGINE", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        IconButton(
+                            onClick = {
+                                isAnalyzingFeedback = true
+                                scope.launch {
+                                    delay(600)
+                                    val sectionName = sections.firstOrNull { it.id == selectedSectionId }?.name ?: "Active section"
+                                    aiFeedbackTip = "Feedback for $sectionName at ${viewModel.bpm.value} BPM:\n" +
+                                            "Excellent transient drive. We advise dropping snare volume by 1.5dB to optimize high-mids."
+                                    isAnalyzingFeedback = false
+                                    viewModel.addXp(80)
+                                }
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            if (isAnalyzingFeedback) {
+                                CircularProgressIndicator(color = MagentaNeon, modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh Critique", tint = MagentaNeon, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                    Text(
+                        aiFeedbackTip,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
-fun ToolBoxCard(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String) {
+fun StemFaderRow(
+    label: String,
+    volume: Float,
+    isMuted: Boolean,
+    isSolo: Boolean,
+    glowColor: Color,
+    onVolumeChange: (Float) -> Unit,
+    onMuteToggle: (Boolean) -> Unit,
+    onSoloToggle: (Boolean) -> Unit
+) {
+    val peakValue = remember(volume, isMuted) {
+        if (isMuted) 0f else volume * (0.6f + (Math.random().toFloat() * 0.4f))
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
-        border = BorderStroke(1.dp, PurpleNeon.copy(alpha = 0.15f))
+        colors = CardDefaults.cardColors(containerColor = BackgroundDark),
+        border = BorderStroke(1.dp, glowColor.copy(alpha = 0.2f))
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = CyanNeon, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(label, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Mute Button
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isMuted) Color.Red else SurfaceSubtle)
+                            .clickable { onMuteToggle(!isMuted) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("M", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    // Solo Button
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isSolo) glowColor else SurfaceSubtle)
+                            .clickable { onSoloToggle(!isSolo) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("S", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(desc, color = TextSecondary, fontSize = 11.sp)
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Slider(
+                    value = volume,
+                    onValueChange = onVolumeChange,
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(activeTrackColor = glowColor, thumbColor = glowColor)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Small bouncing visual meter bar
+                Box(
+                    modifier = Modifier
+                        .width(48.dp)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(SurfaceSubtle)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(peakValue.coerceIn(0f, 1f))
+                            .background(glowColor)
+                    )
+                }
+            }
         }
     }
 }

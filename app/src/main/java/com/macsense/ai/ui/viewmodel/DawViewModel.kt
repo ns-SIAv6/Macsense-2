@@ -247,6 +247,52 @@ class DawViewModel : ViewModel() {
             }
         }
     }
+
+    private val _xpAmount = MutableStateFlow(2450)
+    val xpAmount: StateFlow<Int> = _xpAmount.asStateFlow()
+
+    fun addXp(amount: Int) {
+        _xpAmount.value += amount
+    }
+
+    fun applyRhythmPreset(sectionId: String, presetName: String) {
+        _sections.value = _sections.value.map { section ->
+            if (section.id == sectionId) {
+                val newGrid = section.instrumentGrid.toMutableMap()
+                // Clear grid first
+                for (key in newGrid.keys) {
+                    newGrid[key] = List(16) { false }
+                }
+                
+                when (presetName) {
+                    "Trap 16ths" -> {
+                        newGrid["Kick"] = List(16) { index -> index == 0 || index == 6 || index == 11 }
+                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                        newGrid["Hi-Hat"] = List(16) { true } // 16th notes
+                        newGrid["808/Bass"] = List(16) { index -> index == 0 || index == 11 }
+                    }
+                    "BoomBap Swing" -> {
+                        newGrid["Kick"] = List(16) { index -> index == 0 || index == 10 }
+                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 == 0 } // Straight 8ths
+                    }
+                    "Synthwave 8ths" -> {
+                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 } // Four on the floor
+                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 != 0 } // Offbeat hats
+                        newGrid["Pads"] = List(16) { index -> index == 0 || index == 8 }
+                    }
+                    "Reggaeton 3-2" -> {
+                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
+                        newGrid["Snare"] = List(16) { index -> index == 3 || index == 6 || index == 11 || index == 14 } // Dem Bow
+                        newGrid["Clap"] = List(16) { index -> index == 3 || index == 11 }
+                    }
+                }
+                section.copy(instrumentGrid = newGrid)
+            } else section
+        }
+        addXp(120) // Award XP for applying rhythm templates
+    }
     
     override fun onCleared() {
         super.onCleared()
