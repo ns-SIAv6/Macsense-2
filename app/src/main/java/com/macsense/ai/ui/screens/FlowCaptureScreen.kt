@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.macsense.ai.ui.viewmodel.FlowCaptureViewModel
 import com.macsense.ai.ui.viewmodel.RecordSession
@@ -39,7 +40,14 @@ import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FlowCaptureScreen(viewModel: FlowCaptureViewModel = viewModel()) {
+fun FlowCaptureScreen(
+    viewModel: FlowCaptureViewModel = viewModel(
+        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
+                FlowCaptureViewModel(LocalContext.current) as T
+        }
+    )
+) {
     val isRecording by viewModel.isRecording.collectAsState()
     val elapsedSeconds by viewModel.elapsedSeconds.collectAsState()
     val autoBpm by viewModel.autoBpm.collectAsState()
