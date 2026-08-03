@@ -16,3 +16,7 @@
 local.properties
 .env
 debug.keystore
+# Never commit signing keys or release credentials
+*.jks
+*.keystore
+keystore.properties

@@ -5,11 +5,10 @@ plugins {
     alias(libs.plugins.google.devtools.ksp)
 }
 
-
-
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
+
 android {
     namespace = "com.macsense.ai"
     compileSdk = 35
@@ -23,21 +22,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-
-    signingConfigs {
-        create("release") {
-            storeFile = file("../my-upload-key.jks")
-            storePassword = "password"
-            keyAlias = "my-key-alias"
-            keyPassword = "password"
-        }
-    }
-
+    // Release signing is intentionally not configured in source control.
+    // Add a private signing configuration through your CI secret store when publishing.
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -68,12 +58,12 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    
+
     // Room components
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    
+
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
@@ -81,13 +71,13 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.runner)
-    
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
-    
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
