@@ -424,6 +424,7 @@ fun TakeItemRow(take: RecordSession, onDelete: () -> Unit) {
 
         IconButton(onClick = { showDeleteConfirmation = true }) {
             Icon(Icons.Default.Delete, contentDescription = "Delete take ${take.id.uppercase()}", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Delete, contentDescription = "Delete Take", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
         }
     }
 
