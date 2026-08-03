@@ -11,7 +11,11 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
@@ -681,8 +685,8 @@ fun RightToolsContent(
     onCollapse: () -> Unit,
     onWidthChange: (androidx.compose.ui.unit.Dp) -> Unit
 ) {
-    var activeTab by remember { mutableStateOf(0) } // 0: AI STEMS, 1: CREATORS
-    val tabs = listOf("AI STEMS", "CREATORS")
+    var activeTab by remember { mutableStateOf(0) } // 0: ARI AI, 1: AI STEMS, 2: CREATORS
+    val tabs = listOf("ARI AI", "AI STEMS", "CREATORS")
     val scope = rememberCoroutineScope()
 
     // XP State
@@ -777,6 +781,9 @@ fun RightToolsContent(
         Spacer(modifier = Modifier.height(4.dp))
 
         if (activeTab == 0) {
+            // --- ARI AI INTERACTIVE STUDIO PARTNER ---
+            AriAiChatView(viewModel)
+        } else if (activeTab == 1) {
             // SUNO / UDIO STYLE STEM SPLITTER
             Text("AI MULTI-TRACK STEM SEPARATOR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             
@@ -1276,6 +1283,255 @@ fun MeterBar(label: String, dbValue: Float) {
                     .clip(RoundedCornerShape(3.dp))
                     .background(if (dbValue > -3.0f) Color.Red else CyanNeon)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AriAiChatView(viewModel: DawViewModel) {
+    val chatLog by viewModel.ariChatLog.collectAsState()
+    val isTyping by viewModel.isAriTyping.collectAsState()
+    var inputText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // Scroll to bottom when new messages arrive
+    LaunchedEffect(chatLog.size, isTyping) {
+        if (chatLog.isNotEmpty()) {
+            listState.animateScrollToItem(chatLog.size - 1)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Chat Bubbles area
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(BackgroundDark)
+                .border(BorderStroke(1.dp, Color(0x0FA855F7)), RoundedCornerShape(8.dp))
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(chatLog) { msg ->
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (msg.role == "user") Alignment.End else Alignment.Start
+                ) {
+                    // Chat Bubble
+                    Box(
+                        modifier = Modifier
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart = 12.dp,
+                                    topEnd = 12.dp,
+                                    bottomStart = if (msg.role == "user") 12.dp else 0.dp,
+                                    bottomEnd = if (msg.role == "user") 0.dp else 12.dp
+                                )
+                            )
+                            .background(if (msg.role == "user") SurfaceSubtle else Color(0xFF191330))
+                            .border(
+                                BorderStroke(
+                                    1.dp,
+                                    if (msg.role == "user") CyanNeon.copy(alpha = 0.4f) else PurpleNeon.copy(alpha = 0.4f)
+                                ),
+                                RoundedCornerShape(
+                                    topStart = 12.dp,
+                                    topEnd = 12.dp,
+                                    bottomStart = if (msg.role == "user") 12.dp else 0.dp,
+                                    bottomEnd = if (msg.role == "user") 0.dp else 12.dp
+                                )
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = msg.text,
+                            color = if (msg.role == "user") CyanNeon else TextPrimary,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+
+                    // Special Directive Card (if pending command exists)
+                    msg.pendingCommand?.let { cmd ->
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth(0.95f)
+                                .align(Alignment.Start),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF23113D)),
+                            border = BorderStroke(1.dp, MagentaNeon)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(MagentaNeon)
+                                    )
+                                    Text(
+                                        text = "ARI EXECUTIVE ORDER",
+                                        color = MagentaNeon,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = cmd.explanation,
+                                    color = TextPrimary,
+                                    fontSize = 10.sp,
+                                    lineHeight = 14.sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { viewModel.applyAriCommand(cmd) },
+                                    modifier = Modifier.fillMaxWidth().height(32.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MagentaNeon),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "APPLY CO-PRODUCER CUT (+250 XP)",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isTyping) {
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = PurpleNeon,
+                            modifier = Modifier.size(10.dp),
+                            strokeWidth = 1.dp
+                        )
+                        Text(
+                            text = "ari is analyzing DAW state...",
+                            color = TextSecondary,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+
+        // Fast Action chips
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val chips = listOf(
+                "critique" to "critique my structure",
+                "rewrite" to "rewrite active section lyrics",
+                "beat" to "give me a trap beat",
+                "reverb" to "space out active section reverb"
+            )
+            chips.forEach { chip ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(SurfaceSubtle)
+                        .border(BorderStroke(1.dp, Color(0x1FA855F7)), RoundedCornerShape(4.dp))
+                        .clickable { viewModel.sendMessageToAri(chip.second) }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = chip.first,
+                        color = PurpleNeon,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        // Input Field Area
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            TextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .border(BorderStroke(1.dp, Color(0x3FA855F7)), RoundedCornerShape(8.dp)),
+                placeholder = { Text("pitch a revision to Ari...", color = TextSecondary, fontSize = 11.sp) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = SurfaceDark,
+                    unfocusedContainerColor = SurfaceDark,
+                    disabledContainerColor = SurfaceDark,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    cursorColor = CyanNeon,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                textStyle = TextStyle(fontSize = 11.sp),
+                singleLine = true
+            )
+
+            IconButton(
+                onClick = {
+                    if (inputText.isNotBlank()) {
+                        viewModel.sendMessageToAri(inputText)
+                        inputText = ""
+                    }
+                },
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CyanNeon)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Send,
+                    contentDescription = "Send",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

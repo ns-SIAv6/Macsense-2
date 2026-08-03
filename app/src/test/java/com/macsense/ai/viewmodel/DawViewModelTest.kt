@@ -61,4 +61,89 @@ class DawViewModelTest {
         vm.advanceBar()
         assertEquals(3, vm.barPosition.value)
     }
+
+    @Test
+    fun testSendMessageToAriAddsMessageToLog() {
+        val vm = DawViewModel()
+        val initialSize = vm.ariChatLog.value.size
+        
+        vm.sendMessageToAri("make it fast")
+        
+        // Assert user message is appended immediately
+        assertEquals(initialSize + 1, vm.ariChatLog.value.size)
+        assertEquals("user", vm.ariChatLog.value.last().role)
+        assertEquals("make it fast", vm.ariChatLog.value.last().text)
+    }
+
+    @Test
+    fun testApplyAriCommandBpm() {
+        val vm = DawViewModel()
+        val originalBpm = vm.bpm.value
+        
+        val cmd = com.macsense.ai.api.AriCommand(
+            type = "update_bpm",
+            bpm_value = 150.0,
+            explanation = "too slow rookie"
+        )
+        
+        vm.applyAriCommand(cmd)
+        
+        assertEquals(150.0, vm.bpm.value, 0.001)
+    }
+
+    @Test
+    fun testApplyAriCommandLyrics() {
+        val vm = DawViewModel()
+        val cmd = com.macsense.ai.api.AriCommand(
+            type = "update_lyrics",
+            section_id = "intro",
+            value = "ari lyrics hook drop",
+            explanation = "hot bars"
+        )
+        
+        vm.applyAriCommand(cmd)
+        
+        val introSection = vm.sections.value.find { it.id == "intro" }
+        assertEquals("ari lyrics hook drop", introSection?.lyrics)
+    }
+
+    @Test
+    fun testApplyAriCommandReorder() {
+        val vm = DawViewModel()
+        val originalOrder = vm.sections.value.map { it.id }
+        
+        val reversedOrder = originalOrder.reversed()
+        val cmd = com.macsense.ai.api.AriCommand(
+            type = "reorder_sections",
+            section_order = reversedOrder,
+            explanation = "switch it up"
+        )
+        
+        vm.applyAriCommand(cmd)
+        
+        val newOrder = vm.sections.value.map { it.id }
+        assertEquals(reversedOrder, newOrder)
+    }
+
+    @Test
+    fun testApplyAriCommandEffects() {
+        val vm = DawViewModel()
+        val cmd = com.macsense.ai.api.AriCommand(
+            type = "update_effects",
+            section_id = "intro",
+            reverb = 0.9f,
+            delay = 0.8f,
+            filter = 0.7f,
+            volume = 0.6f,
+            explanation = "wash out"
+        )
+        
+        vm.applyAriCommand(cmd)
+        
+        val introSection = vm.sections.value.find { it.id == "intro" }
+        assertEquals(0.9f, introSection?.reverb ?: 0f, 0.001f)
+        assertEquals(0.8f, introSection?.delay ?: 0f, 0.001f)
+        assertEquals(0.7f, introSection?.filter ?: 0f, 0.001f)
+        assertEquals(0.6f, introSection?.volume ?: 0f, 0.001f)
+    }
 }
