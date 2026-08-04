@@ -19,6 +19,7 @@ import com.macsense.ai.audio.NativePlaybackEngine
 import com.macsense.ai.audio.SoundArchive
 import com.macsense.ai.audio.SoundBreeder
 import com.macsense.ai.audio.SoundGenome
+import com.macsense.ai.audio.SoundLineage
 import com.macsense.ai.audio.TransportClock
 import com.macsense.ai.data.repository.MacSenseRepository
 import kotlinx.coroutines.CoroutineScope
@@ -124,6 +125,18 @@ class DawViewModel(
     /** Result of the most recent successful "resurrect_sound" Ari command, if any. */
     val lastResurrectedEntry: StateFlow<SoundArchive.Entry?> = _lastResurrectedEntry.asStateFlow()
 
+    private val _archiveEntries = MutableStateFlow<List<SoundArchive.Entry>>(emptyList())
+    /**
+     * Snapshot of every archived take known to [repository] (LIVING, DORMANT, and REBORN),
+     * refreshed after every breed/resurrect/genome-extraction operation. Empty and static when
+     * no repository is wired up. Backs the breeding screen's parent pickers and lineage view.
+     */
+    val archiveEntries: StateFlow<List<SoundArchive.Entry>> = _archiveEntries.asStateFlow()
+
+    /** Ancestry graph over the current [archiveEntries] snapshot; see [SoundLineage]. */
+    val soundLineage: SoundLineage
+        get() = SoundLineage(_archiveEntries.value)
+
     /** True only when the native lib linked and a take has actually been loaded into it. */
     val isNativePlaybackAvailable: Boolean
         get() = nativePlayback.isNativeAvailable && _hasLoadedTake.value
@@ -142,6 +155,16 @@ class DawViewModel(
     
     init {
         startMeterLoop()
+        refreshArchiveEntries()
+    }
+
+    /** Reloads [archiveEntries] from [repository]. Safe no-op if no repository is wired up. */
+    fun refreshArchiveEntries() {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val entries = repo.getArchiveEntries()
+            withContext(Dispatchers.Main) { _archiveEntries.value = entries }
+        }
     }
 
     /**
@@ -194,6 +217,7 @@ class DawViewModel(
                         )
                     }
                     AppLogger.i("DawViewModel", "Persisted genome + archive entry for take=$takeId")
+                    refreshArchiveEntries()
                 }
             } catch (e: Exception) {
                 AppLogger.e("DawViewModel", "Genome extraction/persistence failed for take=$takeId", e)
@@ -240,11 +264,20 @@ class DawViewModel(
                 repo.upsertArchiveEntry(childEntry)
 
                 withContext(Dispatchers.Main) { _lastBredEntry.value = childEntry }
+                refreshArchiveEntries()
                 AppLogger.i("DawViewModel", "Bred ${childEntry.takeId} from $parentTakeId x $parentTakeId2")
             } catch (e: Exception) {
                 AppLogger.e("DawViewModel", "breed_sounds failed for $parentTakeId x $parentTakeId2", e)
             }
         }
+    }
+
+    /**
+     * Public entry point for the breeding screen to trigger a breed directly (as opposed to via
+     * an Ari chat command). Mirrors the same persistence path as the `breed_sounds` Ari command.
+     */
+    fun breedSoundsFromUi(parentTakeId: String, parentTakeId2: String, traitBias: Double = 0.5, tags: Set<String> = emptySet()) {
+        breedSounds(parentTakeId, parentTakeId2, traitBias, tags)
     }
 
     /**
@@ -278,11 +311,21 @@ class DawViewModel(
                 source.genome?.let { repo.upsertSoundGenome(genomeProjectId, it.copy(sourceId = newTakeId)) }
 
                 withContext(Dispatchers.Main) { _lastResurrectedEntry.value = revivedEntry }
+                refreshArchiveEntries()
                 AppLogger.i("DawViewModel", "Resurrected $takeId as $newTakeId")
             } catch (e: Exception) {
                 AppLogger.e("DawViewModel", "resurrect_sound failed for $takeId", e)
             }
         }
+    }
+
+    /**
+     * Public entry point for the breeding screen to trigger a resurrection directly (as opposed
+     * to via an Ari chat command). Mirrors the same persistence path as the `resurrect_sound`
+     * Ari command.
+     */
+    fun resurrectSoundFromUi(takeId: String, tags: Set<String> = emptySet()) {
+        resurrectSound(takeId, tags)
     }
     
     fun togglePlayPause() {
