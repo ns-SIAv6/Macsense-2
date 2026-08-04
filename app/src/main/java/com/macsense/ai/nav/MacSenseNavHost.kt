@@ -14,5 +14,6 @@ fun MacSenseNavHost(navController: NavHostController) {
         composable(Routes.VOCAL_SCANNER) { VocalScannerScreen() }
         composable(Routes.MASTERING) { MasteringScreen() }
         composable(Routes.LYRICS_STUDIO) { LyricsStudioScreen() }
+        composable(Routes.BREEDING) { BreedingScreen() }
     }
 }
