@@ -6,4 +6,5 @@ object Routes {
     const val VOCAL_SCANNER = "vocal_scanner"
     const val MASTERING = "mastering"
     const val LYRICS_STUDIO = "lyrics_studio"
+    const val BREEDING = "breeding"
 }
