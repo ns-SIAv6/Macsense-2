@@ -23,10 +23,14 @@ class MainActivity : ComponentActivity() {
         ) {
             microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         }
+        // First real production wiring of AppContainer.repository into the DAW screen: without
+        // this, DawViewModel falls back to repository = null and breed_sounds/resurrect_sound
+        // Ari commands silently no-op instead of persisting through Room.
+        val repository = (application as MacSenseApplication).container.repository
         setContent {
             MacSenseTheme {
                 val navController = rememberNavController()
-                MacSenseNavHost(navController)
+                MacSenseNavHost(navController, repository = repository)
             }
         }
     }
