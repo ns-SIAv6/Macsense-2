@@ -2,6 +2,7 @@ package com.macsense.ai.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -276,10 +277,6 @@ private fun ArchiveEntryRow(entry: SoundArchive.Entry, selected: Boolean, onClic
         }
     }
 }
-
-@Composable
-private fun Modifier.border(border: BorderStroke, shape: RoundedCornerShape) =
-    this.then(androidx.compose.foundation.border(border, shape))
 
 @Composable
 private fun ResultCard(title: String, entry: SoundArchive.Entry, tint: Color) {
