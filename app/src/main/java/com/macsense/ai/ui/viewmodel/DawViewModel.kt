@@ -12,9 +12,8 @@ import com.macsense.ai.api.withGeminiRetry
 import com.macsense.ai.telemetry.AppLogger
 import com.macsense.ai.telemetry.StartupValidator
 import com.macsense.ai.BuildConfig
-import com.macsense.ai.dsp.Fft
-import com.macsense.ai.dsp.LoudnessMeter
-import com.macsense.ai.dsp.TruePeakMeter
+import com.macsense.ai.audio.LiveMeterEngine
+import com.macsense.ai.audio.TransportClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,9 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.sin
-import kotlin.math.cos
-import kotlin.random.Random
 
 data class SectionInfo(
     val id: String,
@@ -58,7 +54,9 @@ fun createDefaultGrid(): Map<String, List<Boolean>> {
     }
 }
 
-class DawViewModel : ViewModel() {
+class DawViewModel(
+    private val meterEngine: LiveMeterEngine = LiveMeterEngine()
+) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
     
@@ -89,12 +87,14 @@ class DawViewModel : ViewModel() {
     private val _spectrumData = MutableStateFlow(FloatArray(32) { -80f })
     val spectrumData: StateFlow<FloatArray> = _spectrumData.asStateFlow()
     
+    private val transportClock = TransportClock()
     private var playbackJob: Job? = null
-    private var simulationJob: Job? = null
+    private var meterJob: Job? = null
+    private var micAvailable = false
     private val scope = CoroutineScope(Dispatchers.Default)
     
     init {
-        startSimulationLoop()
+        startMeterLoop()
     }
     
     fun togglePlayPause() {
@@ -107,6 +107,10 @@ class DawViewModel : ViewModel() {
     
     fun play() {
         _isPlaying.value = true
+        micAvailable = meterEngine.start()
+        if (!micAvailable) {
+            AppLogger.i("DawViewModel", "Mic capture unavailable, meters will show decaying silence")
+        }
         startTransportClock()
     }
     
@@ -114,6 +118,10 @@ class DawViewModel : ViewModel() {
         _isPlaying.value = false
         playbackJob?.cancel()
         playbackJob = null
+        if (micAvailable) {
+            meterEngine.stop()
+            micAvailable = false
+        }
     }
     
     fun advanceBar() {
@@ -123,9 +131,7 @@ class DawViewModel : ViewModel() {
     fun updateBpm(newBpm: Double) {
         if (newBpm in 40.0..250.0) {
             _bpm.value = newBpm
-            if (_isPlaying.value) {
-                startTransportClock() // Restart to apply new duration
-            }
+            transportClock.setBpm(newBpm)
         }
     }
     
@@ -190,60 +196,43 @@ class DawViewModel : ViewModel() {
     
     private fun startTransportClock() {
         playbackJob?.cancel()
+        transportClock.setBpm(_bpm.value)
+        transportClock.start()
         playbackJob = scope.launch {
             while (true) {
-                val barDurationMs = (240000.0 / _bpm.value).toLong()
-                delay(barDurationMs)
-                advanceBar()
+                val waitMs = transportClock.nextBarDelayMs().coerceAtLeast(1L)
+                delay(waitMs)
+                transportClock.advance()
+                _barPosition.value = transportClock.barIndex + 1
             }
         }
     }
     
-    private fun startSimulationLoop() {
-        simulationJob?.cancel()
-        simulationJob = viewModelScope.launch(Dispatchers.Default) {
-            val sampleRate = 44100
-            val bufferSize = 512
-            val re = DoubleArray(bufferSize)
-            val im = DoubleArray(bufferSize)
-            var phase = 0.0
-            
+    private fun startMeterLoop() {
+        meterJob?.cancel()
+        meterJob = viewModelScope.launch(Dispatchers.Default) {
             while (true) {
                 if (_isPlaying.value) {
-                    // Update timecode
                     val totalBeats = (_barPosition.value - 1) * 4.0
                     val totalSeconds = (totalBeats / _bpm.value) * 60.0
                     val minutes = (totalSeconds / 60).toInt()
                     val seconds = (totalSeconds % 60).toInt()
                     val ms = ((totalSeconds % 1.0) * 100).toInt()
                     _timecode.value = String.format("%02d:%02d:%02d", minutes, seconds, ms)
-                    
-                    // Generate realistic synthesized signal for meters and FFT spectrum
-                    for (i in 0 until bufferSize) {
-                        val sineSignal = sin(phase) * 0.5 + sin(phase * 2.5) * 0.2 + cos(phase * 0.5) * 0.15
-                        re[i] = sineSignal + Random.nextDouble(-0.05, 0.05) // Add noise
-                        im[i] = 0.0
-                        phase += (2.0 * Math.PI * 220.0 / sampleRate) // 220Hz fundamental
-                        if (phase > 2.0 * Math.PI) phase -= 2.0 * Math.PI
+
+                    if (micAvailable) {
+                        _spectrumData.value = meterEngine.latestSpectrumDb
+                        _meterL.value = meterEngine.latestPeakDbL
+                        _meterR.value = meterEngine.latestPeakDbR
+                    } else {
+                        // No mic input available (permission denied, no device, headless test env):
+                        // decay toward silence rather than fabricating a signal.
+                        _meterL.value = (_meterL.value - 2.0f).coerceAtLeast(-60f)
+                        _meterR.value = (_meterR.value - 2.0f).coerceAtLeast(-60f)
+                        val spec = _spectrumData.value.clone()
+                        for (i in spec.indices) spec[i] = (spec[i] - 1.5f).coerceAtLeast(-80f)
+                        _spectrumData.value = spec
                     }
-                    
-                    // Run FFT
-                    Fft.fft(re, im)
-                    val spec = FloatArray(32)
-                    for (i in 0 until 32) {
-                        val mag = Math.sqrt(re[i] * re[i] + im[i] * im[i])
-                        val db = (20.0 * Math.log10(mag + 1e-5)).toFloat()
-                        spec[i] = db.coerceIn(-80f, 0f)
-                    }
-                    _spectrumData.value = spec
-                    
-                    // Calculate Meter levels (peaks)
-                    val peakValL = re.maxOrNull() ?: 0.0
-                    val peakValR = re.minOrNull() ?: 0.0
-                    val dbL = (20.0 * Math.log10(Math.abs(peakValL) + 1e-5)).toFloat()
-                    val dbR = (20.0 * Math.log10(Math.abs(peakValR) + 1e-5)).toFloat()
-                    _meterL.value = dbL.coerceIn(-60f, 0f)
-                    _meterR.value = dbR.coerceIn(-60f, 0f)
                 } else {
                     _meterL.value = -60.0f
                     _meterR.value = -60.0f
@@ -307,7 +296,11 @@ class DawViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         playbackJob?.cancel()
-        simulationJob?.cancel()
+        meterJob?.cancel()
+        if (micAvailable) {
+            meterEngine.stop()
+            micAvailable = false
+        }
     }
 
     // --- Ari AI Agent States & Logic ---
