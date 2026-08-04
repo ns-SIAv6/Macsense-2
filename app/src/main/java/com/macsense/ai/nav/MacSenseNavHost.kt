@@ -16,7 +16,9 @@ import com.macsense.ai.ui.viewmodel.DawViewModelFactory
  * simply falls back to its `repository = null` default and the sound-genetics Ari commands
  * become no-ops, exactly as before. Production call sites (see [com.macsense.ai.MainActivity])
  * should always pass the real repository from `AppContainer` so `breed_sounds`/`resurrect_sound`
- * actually persist.
+ * actually persist. The same factory-or-default pattern is reused for the [Routes.BREEDING]
+ * destination so [BreedingScreen] shares the exact same [DawViewModel] instance/backing store
+ * conventions as the DAW screen.
  */
 @Composable
 fun MacSenseNavHost(navController: NavHostController, repository: MacSenseRepository? = null) {
@@ -33,5 +35,13 @@ fun MacSenseNavHost(navController: NavHostController, repository: MacSenseReposi
         composable(Routes.VOCAL_SCANNER) { VocalScannerScreen() }
         composable(Routes.MASTERING) { MasteringScreen() }
         composable(Routes.LYRICS_STUDIO) { LyricsStudioScreen() }
+        composable(Routes.BREEDING) {
+            val breedingViewModel: DawViewModel = if (repository != null) {
+                viewModel(factory = DawViewModelFactory(repository))
+            } else {
+                viewModel()
+            }
+            BreedingScreen(viewModel = breedingViewModel)
+        }
     }
 }

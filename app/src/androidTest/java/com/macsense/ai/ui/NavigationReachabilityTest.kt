@@ -33,7 +33,8 @@ class NavigationReachabilityTest {
             Routes.FLOW_CAPTURE,
             Routes.VOCAL_SCANNER,
             Routes.MASTERING,
-            Routes.LYRICS_STUDIO
+            Routes.LYRICS_STUDIO,
+            Routes.BREEDING
         )
 
         for (route in routes) {
