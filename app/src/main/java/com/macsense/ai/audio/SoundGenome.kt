@@ -1,6 +1,9 @@
 package com.macsense.ai.audio
 
+import kotlinx.serialization.Serializable
+
 /** Measurable, provenance-aware identity for evolving a take without losing its ancestry. */
+@Serializable
 data class SoundGenome(
     val sourceId: String,
     val transient: Double,

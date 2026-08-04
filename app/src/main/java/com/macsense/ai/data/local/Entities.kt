@@ -39,3 +39,16 @@ data class VersionNodeEntity(
     val parentId: String?,
     val timestamp: Long
 )
+
+/**
+ * Persisted [com.macsense.ai.audio.SoundArchive.Entry]. Genome and tags are stored as
+ * serialized strings via [Converters] to keep the schema stable as SoundGenome evolves.
+ */
+@Entity(tableName = "sound_archive_entries")
+data class SoundArchiveEntryEntity(
+    @PrimaryKey val takeId: String,
+    @ColumnInfo(name = "state") val state: String,
+    @ColumnInfo(name = "tags") val tags: String,
+    @ColumnInfo(name = "genome_data") val genomeData: String?,
+    @ColumnInfo(name = "origin_take_id") val originTakeId: String?
+)
