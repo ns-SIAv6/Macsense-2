@@ -13,9 +13,13 @@ import com.macsense.ai.telemetry.AppLogger
 import com.macsense.ai.telemetry.StartupValidator
 import com.macsense.ai.BuildConfig
 import com.macsense.ai.audio.AudioCapture
+import com.macsense.ai.audio.GenomeExtractor
 import com.macsense.ai.audio.LiveMeterEngine
 import com.macsense.ai.audio.NativePlaybackEngine
+import com.macsense.ai.audio.SoundArchive
+import com.macsense.ai.audio.SoundGenome
 import com.macsense.ai.audio.TransportClock
+import com.macsense.ai.data.repository.MacSenseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +28,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 data class SectionInfo(
     val id: String,
@@ -58,7 +64,9 @@ fun createDefaultGrid(): Map<String, List<Boolean>> {
 
 class DawViewModel(
     private val meterEngine: LiveMeterEngine = LiveMeterEngine(),
-    private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine()
+    private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine(),
+    private val repository: MacSenseRepository? = null,
+    private val genomeProjectId: String = "default-project"
 ) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -94,6 +102,18 @@ class DawViewModel(
     /** Whether a recorded take has been loaded into the native playback engine. */
     val hasLoadedTake: StateFlow<Boolean> = _hasLoadedTake.asStateFlow()
 
+    private val _currentTakeId = MutableStateFlow<String?>(null)
+    /** Id of the take currently loaded into the native player, if any. */
+    val currentTakeId: StateFlow<String?> = _currentTakeId.asStateFlow()
+
+    private val _lastExtractedGenome = MutableStateFlow<SoundGenome?>(null)
+    /** Genome extracted from the most recently completed take, once extraction finishes. */
+    val lastExtractedGenome: StateFlow<SoundGenome?> = _lastExtractedGenome.asStateFlow()
+
+    private val _isExtractingGenome = MutableStateFlow(false)
+    /** True while [GenomeExtractor] is running and the archive entry is being persisted. */
+    val isExtractingGenome: StateFlow<Boolean> = _isExtractingGenome.asStateFlow()
+
     /** True only when the native lib linked and a take has actually been loaded into it. */
     val isNativePlaybackAvailable: Boolean
         get() = nativePlayback.isNativeAvailable && _hasLoadedTake.value
@@ -119,12 +139,57 @@ class DawViewModel(
      * native low-latency playback engine so transport controls play real audio, not just
      * the click/meter simulation. Safe to call even if the native lib failed to load; in
      * that case this is a harmless no-op and [isNativePlaybackAvailable] stays false.
+     *
+     * Also kicks off the Phase 5 genetic-sound pipeline: on successful load, [GenomeExtractor]
+     * runs against the same samples off the main thread, and a LIVING [SoundArchive.Entry] is
+     * persisted through [repository] (when one was supplied) so the take becomes breedable,
+     * traceable in the lineage graph, and eligible for resurrection later.
      */
-    fun loadTake(samples: DoubleArray, sampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE) {
+    fun loadTake(samples: DoubleArray, sampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE, takeId: String = UUID.randomUUID().toString()) {
         takeSampleRate = sampleRate
         _hasLoadedTake.value = nativePlayback.load(samples, sampleRate)
         if (!_hasLoadedTake.value) {
             AppLogger.i("DawViewModel", "Native playback unavailable or load failed; transport will run click-only")
+        }
+        _currentTakeId.value = takeId
+        extractAndArchiveGenome(takeId, samples, sampleRate)
+    }
+
+    /**
+     * Runs [GenomeExtractor.extract] off the main thread and persists both the genome and a
+     * LIVING [SoundArchive.Entry] via [repository]. Safe no-op for genome persistence if no
+     * repository was injected (e.g. in lightweight unit tests); [lastExtractedGenome] is still
+     * updated so callers/tests can observe the extraction result either way.
+     */
+    private fun extractAndArchiveGenome(takeId: String, samples: DoubleArray, sampleRate: Int) {
+        viewModelScope.launch {
+            _isExtractingGenome.value = true
+            try {
+                val genome = withContext(Dispatchers.Default) {
+                    GenomeExtractor.extract(sourceId = takeId, samples = samples, sampleRate = sampleRate)
+                }
+                _lastExtractedGenome.value = genome
+
+                repository?.let { repo ->
+                    withContext(Dispatchers.IO) {
+                        repo.upsertSoundGenome(genomeProjectId, genome)
+                        repo.upsertArchiveEntry(
+                            SoundArchive.Entry(
+                                takeId = takeId,
+                                state = SoundArchive.State.LIVING,
+                                tags = emptySet(),
+                                genome = genome,
+                                originTakeId = null
+                            )
+                        )
+                    }
+                    AppLogger.i("DawViewModel", "Persisted genome + archive entry for take=$takeId")
+                }
+            } catch (e: Exception) {
+                AppLogger.e("DawViewModel", "Genome extraction/persistence failed for take=$takeId", e)
+            } finally {
+                _isExtractingGenome.value = false
+            }
         }
     }
     
