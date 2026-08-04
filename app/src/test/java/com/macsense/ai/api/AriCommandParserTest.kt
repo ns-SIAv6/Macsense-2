@@ -119,4 +119,47 @@ class AriCommandParserTest {
         assertTrue(!cleanText.contains("ari_command"))
         assertNotNull(command)
     }
+
+    @Test
+    fun `parses breed_sounds command with both parent ids and trait bias`() {
+        val raw = "<ari_command>{\"type\":\"breed_sounds\",\"parent_take_id\":\"take1\",\"parent_take_id_2\":\"take2\",\"trait_bias\":0.7,\"tags\":[\"experimental\"],\"explanation\":\"crossing these two\"}</ari_command>"
+        val (_, command) = AriCommandParser.parse(raw)
+        assertNotNull(command)
+        assertEquals("breed_sounds", command!!.type)
+        assertEquals("take1", command.parent_take_id)
+        assertEquals("take2", command.parent_take_id_2)
+        assertEquals(0.7, command.trait_bias)
+        assertEquals(listOf("experimental"), command.tags)
+    }
+
+    @Test
+    fun `parses breed_sounds command without optional trait_bias or tags`() {
+        val raw = "<ari_command>{\"type\":\"breed_sounds\",\"parent_take_id\":\"take1\",\"parent_take_id_2\":\"take2\",\"explanation\":\"crossing these two\"}</ari_command>"
+        val (_, command) = AriCommandParser.parse(raw)
+        assertNotNull(command)
+        assertNull(command!!.trait_bias)
+        assertNull(command.tags)
+    }
+
+    @Test
+    fun `parses resurrect_sound command with take_id and tags`() {
+        val raw = "<ari_command>{\"type\":\"resurrect_sound\",\"take_id\":\"dormant1\",\"tags\":[\"revived\"],\"explanation\":\"bringing it back\"}</ari_command>"
+        val (_, command) = AriCommandParser.parse(raw)
+        assertNotNull(command)
+        assertEquals("resurrect_sound", command!!.type)
+        assertEquals("dormant1", command.take_id)
+        assertEquals(listOf("revived"), command.tags)
+    }
+
+    @Test
+    fun `existing command types are unaffected by new genetics fields`() {
+        val raw = "<ari_command>{\"type\":\"update_bpm\",\"bpm_value\":140.0,\"explanation\":\"faster\"}</ari_command>"
+        val (_, command) = AriCommandParser.parse(raw)
+        assertNotNull(command)
+        assertNull(command!!.parent_take_id)
+        assertNull(command.parent_take_id_2)
+        assertNull(command.trait_bias)
+        assertNull(command.take_id)
+        assertNull(command.tags)
+    }
 }
