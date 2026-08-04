@@ -12,7 +12,9 @@ import com.macsense.ai.api.withGeminiRetry
 import com.macsense.ai.telemetry.AppLogger
 import com.macsense.ai.telemetry.StartupValidator
 import com.macsense.ai.BuildConfig
+import com.macsense.ai.audio.AudioCapture
 import com.macsense.ai.audio.LiveMeterEngine
+import com.macsense.ai.audio.NativePlaybackEngine
 import com.macsense.ai.audio.TransportClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,7 +57,8 @@ fun createDefaultGrid(): Map<String, List<Boolean>> {
 }
 
 class DawViewModel(
-    private val meterEngine: LiveMeterEngine = LiveMeterEngine()
+    private val meterEngine: LiveMeterEngine = LiveMeterEngine(),
+    private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine()
 ) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -86,6 +89,20 @@ class DawViewModel(
     
     private val _spectrumData = MutableStateFlow(FloatArray(32) { -80f })
     val spectrumData: StateFlow<FloatArray> = _spectrumData.asStateFlow()
+
+    private val _hasLoadedTake = MutableStateFlow(false)
+    /** Whether a recorded take has been loaded into the native playback engine. */
+    val hasLoadedTake: StateFlow<Boolean> = _hasLoadedTake.asStateFlow()
+
+    /** True only when the native lib linked and a take has actually been loaded into it. */
+    val isNativePlaybackAvailable: Boolean
+        get() = nativePlayback.isNativeAvailable && _hasLoadedTake.value
+
+    /** Real audio-thread-accurate playback position, distinct from the TransportClock's bar estimate. */
+    val nativePlaybackPositionSeconds: Double
+        get() = if (isNativePlaybackAvailable) nativePlayback.positionSeconds(takeSampleRate) else 0.0
+
+    private var takeSampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE
     
     private val transportClock = TransportClock()
     private var playbackJob: Job? = null
@@ -95,6 +112,20 @@ class DawViewModel(
     
     init {
         startMeterLoop()
+    }
+
+    /**
+     * Loads a recorded take (normalized mono Double PCM, e.g. from PcmFileStore) into the
+     * native low-latency playback engine so transport controls play real audio, not just
+     * the click/meter simulation. Safe to call even if the native lib failed to load; in
+     * that case this is a harmless no-op and [isNativePlaybackAvailable] stays false.
+     */
+    fun loadTake(samples: DoubleArray, sampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE) {
+        takeSampleRate = sampleRate
+        _hasLoadedTake.value = nativePlayback.load(samples, sampleRate)
+        if (!_hasLoadedTake.value) {
+            AppLogger.i("DawViewModel", "Native playback unavailable or load failed; transport will run click-only")
+        }
     }
     
     fun togglePlayPause() {
@@ -111,6 +142,9 @@ class DawViewModel(
         if (!micAvailable) {
             AppLogger.i("DawViewModel", "Mic capture unavailable, meters will show decaying silence")
         }
+        if (isNativePlaybackAvailable) {
+            nativePlayback.play()
+        }
         startTransportClock()
     }
     
@@ -121,6 +155,23 @@ class DawViewModel(
         if (micAvailable) {
             meterEngine.stop()
             micAvailable = false
+        }
+        if (isNativePlaybackAvailable) {
+            nativePlayback.pause()
+        }
+    }
+
+    /** Stops native playback and rewinds it to frame 0, without affecting the transport clock's bar. */
+    fun stopTakePlayback() {
+        if (nativePlayback.isNativeAvailable) {
+            nativePlayback.stop()
+        }
+    }
+
+    /** Seeks the loaded take to an absolute position in seconds. No-op if no take is loaded. */
+    fun seekTakeTo(seconds: Double) {
+        if (isNativePlaybackAvailable) {
+            nativePlayback.seekToFrame((seconds * takeSampleRate).toLong())
         }
     }
     
@@ -301,6 +352,7 @@ class DawViewModel(
             meterEngine.stop()
             micAvailable = false
         }
+        nativePlayback.close()
     }
 
     // --- Ari AI Agent States & Logic ---
