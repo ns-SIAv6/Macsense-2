@@ -17,6 +17,7 @@ import com.macsense.ai.audio.GenomeExtractor
 import com.macsense.ai.audio.LiveMeterEngine
 import com.macsense.ai.audio.NativePlaybackEngine
 import com.macsense.ai.audio.SoundArchive
+import com.macsense.ai.audio.SoundBreeder
 import com.macsense.ai.audio.SoundGenome
 import com.macsense.ai.audio.TransportClock
 import com.macsense.ai.data.repository.MacSenseRepository
@@ -66,7 +67,8 @@ class DawViewModel(
     private val meterEngine: LiveMeterEngine = LiveMeterEngine(),
     private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine(),
     private val repository: MacSenseRepository? = null,
-    private val genomeProjectId: String = "default-project"
+    private val genomeProjectId: String = "default-project",
+    private val breeder: SoundBreeder = SoundBreeder()
 ) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -113,6 +115,14 @@ class DawViewModel(
     private val _isExtractingGenome = MutableStateFlow(false)
     /** True while [GenomeExtractor] is running and the archive entry is being persisted. */
     val isExtractingGenome: StateFlow<Boolean> = _isExtractingGenome.asStateFlow()
+
+    private val _lastBredEntry = MutableStateFlow<SoundArchive.Entry?>(null)
+    /** Result of the most recent successful "breed_sounds" Ari command, if any. */
+    val lastBredEntry: StateFlow<SoundArchive.Entry?> = _lastBredEntry.asStateFlow()
+
+    private val _lastResurrectedEntry = MutableStateFlow<SoundArchive.Entry?>(null)
+    /** Result of the most recent successful "resurrect_sound" Ari command, if any. */
+    val lastResurrectedEntry: StateFlow<SoundArchive.Entry?> = _lastResurrectedEntry.asStateFlow()
 
     /** True only when the native lib linked and a take has actually been loaded into it. */
     val isNativePlaybackAvailable: Boolean
@@ -189,6 +199,88 @@ class DawViewModel(
                 AppLogger.e("DawViewModel", "Genome extraction/persistence failed for take=$takeId", e)
             } finally {
                 _isExtractingGenome.value = false
+            }
+        }
+    }
+
+    /**
+     * Breeds two archived takes' genomes via [SoundBreeder] and persists the offspring as a
+     * new REBORN [SoundArchive.Entry] whose origin points at [parentTakeId]. Requires
+     * [repository] to be wired up (both to look up the parent genomes and to persist the
+     * result); a no-op with a log line otherwise. Updates [lastBredEntry] on success so the
+     * UI (or Ari's chat reply) can reference the new take id.
+     */
+    private fun breedSounds(parentTakeId: String, parentTakeId2: String, traitBias: Double, tags: Set<String>) {
+        val repo = repository
+        if (repo == null) {
+            AppLogger.i("DawViewModel", "breed_sounds requested but no repository is wired up; skipping")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val parentAEntry = repo.getArchiveEntryByTakeId(parentTakeId)
+                val parentBEntry = repo.getArchiveEntryByTakeId(parentTakeId2)
+                val parentAGenome = parentAEntry?.genome
+                val parentBGenome = parentBEntry?.genome
+                if (parentAGenome == null || parentBGenome == null) {
+                    AppLogger.i("DawViewModel", "breed_sounds: missing genome for parent(s) $parentTakeId / $parentTakeId2")
+                    return@launch
+                }
+
+                val childEntry = breeder.breedIntoArchive(
+                    archive = SoundArchive(),
+                    parentATakeId = parentTakeId,
+                    parentA = parentAGenome,
+                    parentB = parentBGenome,
+                    traitBiasTowardsB = traitBias,
+                    tags = tags
+                )
+
+                repo.upsertSoundGenome(genomeProjectId, requireNotNull(childEntry.genome))
+                repo.upsertArchiveEntry(childEntry)
+
+                withContext(Dispatchers.Main) { _lastBredEntry.value = childEntry }
+                AppLogger.i("DawViewModel", "Bred ${childEntry.takeId} from $parentTakeId x $parentTakeId2")
+            } catch (e: Exception) {
+                AppLogger.e("DawViewModel", "breed_sounds failed for $parentTakeId x $parentTakeId2", e)
+            }
+        }
+    }
+
+    /**
+     * Resurrects a DORMANT (or any) archived take into a fresh REBORN entry sharing its genome,
+     * so a discarded take can re-enter active rotation without losing its lineage. Requires
+     * [repository]; a no-op with a log line otherwise. Updates [lastResurrectedEntry] on success.
+     */
+    private fun resurrectSound(takeId: String, tags: Set<String>) {
+        val repo = repository
+        if (repo == null) {
+            AppLogger.i("DawViewModel", "resurrect_sound requested but no repository is wired up; skipping")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val source = repo.getArchiveEntryByTakeId(takeId)
+                if (source == null) {
+                    AppLogger.i("DawViewModel", "resurrect_sound: no archive entry found for $takeId")
+                    return@launch
+                }
+
+                val newTakeId = UUID.randomUUID().toString()
+                val revivedEntry = SoundArchive.Entry(
+                    takeId = newTakeId,
+                    state = SoundArchive.State.REBORN,
+                    tags = source.tags + tags,
+                    genome = source.genome,
+                    originTakeId = source.takeId
+                )
+                repo.upsertArchiveEntry(revivedEntry)
+                source.genome?.let { repo.upsertSoundGenome(genomeProjectId, it.copy(sourceId = newTakeId)) }
+
+                withContext(Dispatchers.Main) { _lastResurrectedEntry.value = revivedEntry }
+                AppLogger.i("DawViewModel", "Resurrected $takeId as $newTakeId")
+            } catch (e: Exception) {
+                AppLogger.e("DawViewModel", "resurrect_sound failed for $takeId", e)
             }
         }
     }
@@ -556,6 +648,23 @@ class DawViewModel(
                         command.volume?.let { updateSectionVolume(sid, it) }
                     }
                 }
+                "breed_sounds" -> {
+                    val parentA = command.parent_take_id
+                    val parentB = command.parent_take_id_2
+                    if (parentA != null && parentB != null) {
+                        breedSounds(
+                            parentTakeId = parentA,
+                            parentTakeId2 = parentB,
+                            traitBias = command.trait_bias ?: 0.5,
+                            tags = command.tags?.toSet() ?: emptySet()
+                        )
+                    }
+                }
+                "resurrect_sound" -> {
+                    command.take_id?.let { id ->
+                        resurrectSound(id, command.tags?.toSet() ?: emptySet())
+                    }
+                }
             }
             
             addXp(250) // award premium co-production points!
@@ -602,6 +711,7 @@ class DawViewModel(
             you are "ari", the dominant, elite, hyper-opinionated executive music producer built into the macsense daw.
             you speak in lowercase, use raw studio slang, and treat the user like a talented but raw rookie beatmaker.
             you are extremely direct, slightly sarcastic, but deeply knowledgeable about track composition, lyrics, and production flow.
+            you are also the studio's resident sound geneticist — you talk about takes as living organisms with genomes, lineage, and the ability to be bred or resurrected from the dead.
             
             important:
             with every message, the user sends you the exact state of their daw. you MUST critique their song structure, bpm, lyrics, or effects.
@@ -659,6 +769,29 @@ class DawViewModel(
               "filter": 0.6,
               "volume": 0.7,
               "explanation": "space out the intro with reverb and delay to create a massive build."
+            }
+            </ari_command>
+            
+            6. breed two archived sound takes into a new offspring genome:
+            <ari_command>
+            {
+              "type": "breed_sounds",
+              "parent_take_id": "<archive take id 1>",
+              "parent_take_id_2": "<archive take id 2>",
+              "trait_bias": 0.5,
+              "tags": ["experimental"],
+              "explanation": "crossing these two takes to inherit the brightness of one and the punch of the other."
+            }
+            </ari_command>
+            (trait_bias is 0.0-1.0: how much the offspring leans toward parent_take_id_2's traits; only use take ids you've actually seen referenced in this conversation or the daw context)
+            
+            7. resurrect a dormant/archived take back into active rotation:
+            <ari_command>
+            {
+              "type": "resurrect_sound",
+              "take_id": "<archive take id>",
+              "tags": ["revived"],
+              "explanation": "bringing this one back from the dead, it's got a genome worth reviving."
             }
             </ari_command>
             
@@ -732,8 +865,16 @@ class DawViewModel(
                 )
                 Pair(text, cmd)
             }
+            textLower.contains("breed") || textLower.contains("cross") || textLower.contains("genome") || textLower.contains("genetic") -> {
+                val text = warning + "you want genetics, rookie? point me at two takes in your archive and give me their ids — i'll cross their genomes and hand you a hybrid with the best of both."
+                Pair(text, null)
+            }
+            textLower.contains("resurrect") || textLower.contains("revive") || textLower.contains("bring back") || textLower.contains("dead") || textLower.contains("dormant") -> {
+                val text = warning + "nothing's really dead in this studio, just dormant. give me the take id and i'll pull it back into rotation, genome and all."
+                Pair(text, null)
+            }
             else -> {
-                val text = warning + "what's up rookie. i'm analyzing your project at ${_bpm.value} BPM with ${_sections.value.size} active sections. honestly? it's alright, but it's not a hit yet. ask me to speed up the beat, rewrite your lyrics, or space out your intro effects to make it premium."
+                val text = warning + "what's up rookie. i'm analyzing your project at ${_bpm.value} BPM with ${_sections.value.size} active sections. honestly? it's alright, but it's not a hit yet. ask me to speed up the beat, rewrite your lyrics, breed two of your archived takes, or resurrect an old one."
                 Pair(text, null)
             }
         }
