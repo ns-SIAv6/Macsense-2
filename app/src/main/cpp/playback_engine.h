@@ -18,9 +18,16 @@ namespace macsense {
 //   control thread via play()/pause()/seek()/stop(). This keeps the audio
 //   callback allocation-free and lock-free, which AAudio requires for
 //   glitch-free low-latency operation.
+// - Effects (reverb/delay/filter/volume) are applied in onAudioReady() after
+//   reading the dry sample, using state owned entirely by the audio thread
+//   (delayBuffer_, filterState_, combState_) plus atomic *_ parameters that
+//   the control thread can update at any time via setEffects(). Parameters
+//   are read once per sample from the atomics (relaxed order is fine: these
+//   are UI-driven knob values, not correctness-critical synchronization),
+//   so a knob move takes effect within a few audio buffers with no locking.
 class PlaybackEngine {
 public:
-    PlaybackEngine() = default;
+    PlaybackEngine();
     ~PlaybackEngine();
 
     // Loads normalized mono float32 PCM (values expected in [-1, 1]).
@@ -45,6 +52,11 @@ public:
     int32_t getSampleRate() const { return sampleRate_; }
     int64_t getTotalFrames() const { return static_cast<int64_t>(pcm_.size()); }
 
+    // Updates the effects chain parameters. Each is clamped to [0, 1] to match
+    // the DawViewModel SectionInfo slider ranges (reverb/delay/filter/volume).
+    // Safe to call from any thread at any time, including mid-playback.
+    void setEffects(float reverb, float delay, float filter, float volume);
+
     // Releases the AAudio stream. The engine can be reused after loadPcm().
     void release();
 
@@ -53,11 +65,28 @@ public:
 
 private:
     bool openStream();
+    void resizeEffectBuffers();
 
     std::vector<float> pcm_;
     std::atomic<int64_t> readFrame_{0};
     int32_t sampleRate_ = 44100;
     AAudioStream* stream_ = nullptr;
+
+    // Effect parameters, in [0, 1], written by the control thread and read once
+    // per sample by the audio thread. std::atomic<float> guarantees no torn reads
+    // even without an explicit memory_order beyond relaxed, which is all we need
+    // for a smoothly-sliding knob value.
+    std::atomic<float> reverbAmt_{0.0f};
+    std::atomic<float> delayAmt_{0.0f};
+    std::atomic<float> filterAmt_{1.0f};
+    std::atomic<float> volumeAmt_{1.0f};
+
+    // Audio-thread-owned DSP state (never touched by the control thread).
+    std::vector<float> delayBuffer_;
+    int32_t delayWritePos_ = 0;
+    float filterState_ = 0.0f;   // one-pole lowpass state
+    std::vector<float> combBuffer_; // short feedback comb, approximates reverb tail
+    int32_t combWritePos_ = 0;
 };
 
 } // namespace macsense
