@@ -1,9 +1,19 @@
 package com.macsense.ai.audio
 
+import kotlinx.serialization.Serializable
+
 /** Reversible lifecycle for discarded takes; deletion is a deliberate final action. */
 class SoundArchive {
     enum class State { LIVING, DORMANT, REBORN }
-    data class Entry(val takeId: String, val state: State = State.LIVING, val tags: Set<String> = emptySet(), val genome: SoundGenome? = null, val originTakeId: String? = null)
+
+    @Serializable
+    data class Entry(
+        val takeId: String,
+        val state: State = State.LIVING,
+        val tags: Set<String> = emptySet(),
+        val genome: SoundGenome? = null,
+        val originTakeId: String? = null
+    )
 
     private val entries = linkedMapOf<String, Entry>()
     fun add(entry: Entry) { entries[entry.takeId] = entry }

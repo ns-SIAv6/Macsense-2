@@ -12,4 +12,18 @@ object Migrations {
             db.execSQL("CREATE TABLE IF NOT EXISTS `version_nodes` (`id` TEXT NOT NULL, `projectId` TEXT NOT NULL, `parentId` TEXT, `timestamp` INTEGER NOT NULL, PRIMARY KEY(`id`))")
         }
     }
+
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sound_archive_entries` (" +
+                    "`takeId` TEXT NOT NULL, " +
+                    "`state` TEXT NOT NULL, " +
+                    "`tags` TEXT NOT NULL, " +
+                    "`genome_data` TEXT, " +
+                    "`origin_take_id` TEXT, " +
+                    "PRIMARY KEY(`takeId`))"
+            )
+        }
+    }
 }

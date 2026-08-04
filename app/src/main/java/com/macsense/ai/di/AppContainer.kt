@@ -13,10 +13,10 @@ class AppContainer(private val context: Context) {
             MacSenseDatabase::class.java,
             "macsense_db"
         )
-        .addMigrations(Migrations.MIGRATION_1_2)
+        .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
         .build()
     }
-    
+
     val repository: MacSenseRepository by lazy {
         MacSenseRepository(database.dao())
     }

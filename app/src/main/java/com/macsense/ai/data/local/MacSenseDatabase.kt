@@ -6,12 +6,13 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [
-        ProjectEntity::class, 
-        SectionEntity::class, 
-        SoundGenomeEntity::class, 
-        VersionNodeEntity::class
-    ], 
-    version = 2, 
+        ProjectEntity::class,
+        SectionEntity::class,
+        SoundGenomeEntity::class,
+        VersionNodeEntity::class,
+        SoundArchiveEntryEntity::class
+    ],
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
