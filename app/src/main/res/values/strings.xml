@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">MACSENSE</string>
+    <string name="app_name">MACSENSE AI</string>
+    <string name="ari_producer_name">Ari</string>
+    <string name="brand_tagline">Write. Record. Produce. Master. — powered by Ari.</string>
 </resources>

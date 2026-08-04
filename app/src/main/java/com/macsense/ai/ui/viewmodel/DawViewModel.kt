@@ -8,6 +8,9 @@ import com.macsense.ai.api.Content as ApiContent
 import com.macsense.ai.api.Part
 import com.macsense.ai.api.AriCommand
 import com.macsense.ai.api.AriCommandParser
+import com.macsense.ai.api.withGeminiRetry
+import com.macsense.ai.telemetry.AppLogger
+import com.macsense.ai.telemetry.StartupValidator
 import com.macsense.ai.BuildConfig
 import com.macsense.ai.dsp.Fft
 import com.macsense.ai.dsp.LoudnessMeter
@@ -331,9 +334,9 @@ class DawViewModel : ViewModel() {
         
         viewModelScope.launch(Dispatchers.IO) {
             val key = BuildConfig.GEMINI_API_KEY
-            val isPlaceholderKey = key.isEmpty() || key == "MY_GEMINI_API_KEY" || key == "unspecified"
+            val validation = StartupValidator.validateGeminiKey(key)
             
-            if (isPlaceholderKey) {
+            if (!validation.isGeminiKeyConfigured) {
                 delay(1200) // realistic wait
                 val (reply, cmd) = generateOfflineAriResponse(userText)
                 launch(Dispatchers.Main) {
@@ -377,9 +380,13 @@ class DawViewModel : ViewModel() {
                         systemInstruction = ApiContent(parts = listOf(Part(text = systemPrompt)))
                     )
 
-                    val response = RetrofitClient.service.generateContent(key, request)
+                    AppLogger.i("DawViewModel", "Sending Ari request (historyLength=${historyToInclude.size})")
+                    val response = withGeminiRetry {
+                        RetrofitClient.service.generateContent(key, request)
+                    }
                     val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text 
                         ?: "my brain is fuzzing out right now. ask again, rookie."
+                    AppLogger.i("DawViewModel", "Ari response received (chars=${rawText.length})")
                     
                     val (cleanText, cmd) = AriCommandParser.parse(rawText)
                     
@@ -391,6 +398,7 @@ class DawViewModel : ViewModel() {
                     }
                 } catch (e: Exception) {
                     // Fall back to offline model on any error
+                    AppLogger.e("DawViewModel", "Ari cloud pipeline failed, falling back to offline brain", e)
                     delay(1000)
                     val (reply, cmd) = generateOfflineAriResponse(userText)
                     val errReply = "[Ari cloud pipeline failed: ${e.localizedMessage}. falling back to local brain.]\n\n$reply"

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Disallows cleartext (plain HTTP) traffic app-wide. All network calls, including the
+    Gemini API integration, must use HTTPS. This closes the gap where the app previously
+    had no explicit network security policy.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

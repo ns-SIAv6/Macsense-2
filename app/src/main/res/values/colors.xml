@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <!-- Macsense / Ari brand palette (XML mirror of Color.kt for non-Compose surfaces
+         such as the launcher icon background and splash theme). -->
+    <color name="macsense_void_black">#0A0511</color>
+    <color name="macsense_panel_purple">#150B24</color>
+    <color name="macsense_card_purple">#1E1130</color>
+    <color name="macsense_border_purple">#352050</color>
+    <color name="macsense_accent_purple">#8B5CF6</color>
+    <color name="macsense_gold_primary">#E8B34D</color>
+    <color name="macsense_gold_bright">#F5C563</color>
+    <color name="macsense_text_primary">#F5F1FA</color>
+    <color name="macsense_text_secondary">#B3A6C9</color>
 </resources>
