@@ -9,9 +9,9 @@ import kotlin.math.max
  * Drives the DAW's live meters and spectrum analyzer from genuine microphone PCM,
  * replacing the previous synthesized sine+noise placeholder signal.
  *
- * Owns an [AudioCapture] instance and exposes discrete analysis frames pulled from
- * a fixed-size ring buffer so callers can poll at a stable UI frame rate (e.g. 20fps)
- * without being coupled to the capture thread's read cadence.
+ * Owns an [AudioCapture] instance and analyzes audio directly from the capture thread's
+ * chunk callback into a fixed-size ring buffer, so the FFT/true-peak frame is always the
+ * most recent N samples regardless of the UI's polling cadence.
  */
 class LiveMeterEngine(
     private val sampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE,
@@ -22,8 +22,6 @@ class LiveMeterEngine(
     private val ring = DoubleArray(RING_CAPACITY)
     private var writeIndex = 0
     private var filled = 0
-    @Volatile private var running = false
-    private var pollThread: Thread? = null
 
     @Volatile var latestSpectrumDb: FloatArray = FloatArray(spectrumBands) { SILENCE_DB }
         private set
@@ -34,32 +32,14 @@ class LiveMeterEngine(
     @Volatile var latestTruePeakDb: Double = Double.NEGATIVE_INFINITY
         private set
 
-    /** Starts microphone capture and the background analysis loop. Returns false if mic init failed. */
-    @Synchronized
+    /** Starts microphone capture and live analysis. Returns false if mic init failed. */
     fun start(): Boolean {
-        if (running) return true
         writeIndex = 0
         filled = 0
-        if (!capture.start()) return false
-        running = true
-        pollThread = Thread {
-            val chunkBuffer = ArrayList<Double>(fftSize)
-            while (running) {
-                Thread.sleep(POLL_INTERVAL_MS)
-                // AudioCapture exposes a full stop()-drained buffer, so for live polling we
-                // instead snapshot via a lightweight peek: we restart-free sample by briefly
-                // reading what's accumulated is not exposed, so we rely on stop()/start() cycles
-                // being too heavyweight for 20fps; instead we analyze on the ring directly below.
-            }
-        }
-        return true
+        return capture.start(onChunk = ::ingest)
     }
 
-    /**
-     * Feeds a chunk of freshly captured PCM samples into the ring buffer and recomputes
-     * the latest spectrum/peak analysis. Intended to be called from a capture callback;
-     * exposed as public so [DawAudioBridge]-style callers can push samples directly.
-     */
+    /** Feeds a chunk of freshly captured PCM into the ring buffer and recomputes analysis. */
     @Synchronized
     fun ingest(samples: DoubleArray) {
         for (s in samples) {
@@ -108,12 +88,8 @@ class LiveMeterEngine(
         latestTruePeakDb = TruePeakMeter.measureDbtp(frame)
     }
 
-    /** Stops capture and the analysis loop, resetting meters to silence. */
-    @Synchronized
+    /** Stops capture, resetting meters to silence. */
     fun stop() {
-        running = false
-        pollThread?.interrupt()
-        pollThread = null
         capture.stop()
         latestSpectrumDb = FloatArray(spectrumBands) { SILENCE_DB }
         latestPeakDbL = SILENCE_DB
@@ -127,7 +103,6 @@ class LiveMeterEngine(
         const val DEFAULT_FFT_SIZE = 1024
         const val DEFAULT_SPECTRUM_BANDS = 32
         private const val RING_CAPACITY = 8192
-        private const val POLL_INTERVAL_MS = 50L
         private const val SILENCE_DB = -80f
     }
 }

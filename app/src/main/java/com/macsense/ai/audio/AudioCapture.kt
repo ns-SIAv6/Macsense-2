@@ -17,11 +17,15 @@ class AudioCapture(
     /**
      * Starts capturing microphone audio in the background.
      *
+     * @param onChunk optional callback invoked from the capture thread with each freshly-read
+     *   chunk of normalized samples, in addition to the samples being appended to the buffer
+     *   returned by [stop]. Useful for live consumers (meters, spectrum analyzers) that need
+     *   audio as it arrives rather than waiting for capture to stop.
      * @return `true` if capture starts successfully, `false` if capture is already active or initialization fails.
      */
     @Synchronized
     @Suppress("MissingPermission")
-    fun start(): Boolean {
+    fun start(onChunk: ((DoubleArray) -> Unit)? = null): Boolean {
         if (capturing) return false
         val minimumBuffer = AudioRecord.getMinBufferSize(
             sampleRate,
@@ -51,8 +55,11 @@ class AudioCapture(
                 audioRecord.startRecording()
                 while (capturing) {
                     val count = audioRecord.read(buffer, 0, buffer.size)
-                    if (count > 0) synchronized(samples) {
-                        for (index in 0 until count) samples += buffer[index] / SHORT_SCALE
+                    if (count > 0) {
+                        val chunk = DoubleArray(count)
+                        for (index in 0 until count) chunk[index] = buffer[index] / SHORT_SCALE
+                        synchronized(samples) { for (v in chunk) samples += v }
+                        onChunk?.invoke(chunk)
                     }
                 }
             } finally {
