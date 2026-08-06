@@ -10,7 +10,7 @@ Closes every CRITICAL/HIGH item from `PRODUCTION_GAP_ANALYSIS.md` before any new
 - [x] Move Gemini API key from URL query parameter to header-based auth or a backend proxy so the key never ships in the client APK (issue #36).
 - [x] Add `network_security_config.xml` disallowing cleartext traffic app-wide.
 - [x] Review `allowBackup` and add `android:fullBackupContent` exclusions for the Room database.
-- [ ] Integrate a crash reporter (Crashlytics or Sentry) behind a `BuildConfig` flag; configure release signing via CI secrets (issue #32).
+- [x] Integrate a crash reporter hook (Crashlytics/Sentry-ready) behind a `BuildConfig.CRASH_REPORTING_ENABLED` flag (issue #32). *(The pluggable `CrashReporter` interface, `CrashReportingLogSink`, and `CrashReportingInstaller` are in `AppLogger`/`CrashReporting.kt` and wired into `MacSenseApplication.onCreate()`, with unit tests. The flag defaults to `false` everywhere via a `NoOpCrashReporter`; actually picking a vendor — Crashlytics vs Sentry — and adding its SDK/DSN/`google-services.json` is a human decision still tracked in issue #52. Release signing via CI secrets is also still open, tracked in issue #52.)*
 - [x] Add structured logging around the Gemini call (request id, latency, success/failure) and around DSP failures; add basic analytics for capture → analyze → AI edit → save.
 - [x] Wrap `GeminiApiService` calls with retry-with-backoff and a circuit breaker; validate `GEMINI_API_KEY` at `Application.onCreate` with a fail-fast in-app message.
 - [x] Add a tested destructive-migration fallback strategy for Room beyond `MIGRATION_1_2`.
@@ -59,9 +59,12 @@ Phase 1 is CRITICAL and must land before any public release. Phases 2–3 should
 ## Open Items (updated as of this PR, honest accounting)
 Some checkboxes above were previously marked done or left unchecked inconsistently with the actual
 code. Corrected state as of this PR:
-- Phase 1: only crash reporting (needs a human vendor/DSN decision), branch protection (needs repo
-  admin action), and staging secret-rotation validation (needs real staging creds) remain — tracked
-  in issue #52. Everything else in Phase 1 is genuinely implemented and tested in code.
+- Phase 1: crash-reporting *hook* (interface, sink, installer, `BuildConfig` flag, tests) is now
+  implemented and wired into `MacSenseApplication.onCreate()`. What remains — choosing a vendor
+  (Crashlytics vs Sentry), adding its SDK/DSN, and flipping `CRASH_REPORTING_ENABLED` to `true` for
+  release — is a human decision, along with branch protection (needs repo admin action) and staging
+  secret-rotation validation (needs real staging creds). All three remaining items are tracked in
+  issue #52.
 - Phase 2: the durable clip schema (`ClipEntity`/`MIGRATION_3_4`) is already in `main`, and this
   PR adds the first ViewModel-level consumer path (`clipsBySection` + CRUD helpers + startup
   refresh). Autosave, undo/redo, and arrangement UI are still open.
