@@ -23,6 +23,7 @@ import com.macsense.ai.audio.SoundLineage
 import com.macsense.ai.audio.TransportClock
 import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.repository.MacSenseRepository
+import com.macsense.ai.util.UndoRedoManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 data class SectionInfo(
@@ -45,6 +49,25 @@ data class SectionInfo(
     val delay: Float = 0.15f,
     val filter: Float = 0.85f,
     val volume: Float = 0.75f
+)
+
+@Serializable
+private data class SectionSnapshot(
+    val id: String,
+    val name: String,
+    val barCount: Int,
+    val isExpanded: Boolean,
+    val lyrics: String,
+    val instrumentGrid: Map<String, List<Boolean>>,
+    val reverb: Float,
+    val delay: Float,
+    val filter: Float,
+    val volume: Float
+)
+
+private data class DawUndoState(
+    val bpm: Double,
+    val sections: List<SectionInfo>
 )
 
 fun createDefaultGrid(): Map<String, List<Boolean>> {
@@ -70,14 +93,16 @@ class DawViewModel(
     private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine(),
     private val repository: MacSenseRepository? = null,
     private val genomeProjectId: String = "default-project",
-    private val breeder: SoundBreeder = SoundBreeder()
+    private val breeder: SoundBreeder = SoundBreeder(),
+    private val autosaveProjectId: String = "default-project",
+    private val autosaveDebounceMs: Long = 750L
 ) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
-    
+
     private val _barPosition = MutableStateFlow(1)
     val barPosition: StateFlow<Int> = _barPosition.asStateFlow()
-    
+
     private val _sections = MutableStateFlow(listOf(
         SectionInfo("intro", "Intro", barCount = 4),
         SectionInfo("verse1", "Verse 1", barCount = 16),
@@ -88,25 +113,20 @@ class DawViewModel(
     val sections: StateFlow<List<SectionInfo>> = _sections.asStateFlow()
 
     private val _clipsBySection = MutableStateFlow<Map<String, List<ClipEntity>>>(emptyMap())
-    /**
-     * Durable timeline clips keyed by section id. This is the first VM-level consumer of the
-     * Phase 2 `ClipEntity` schema: the UI can now observe actual persisted clip placements instead
-     * of only in-memory step-grid/lyrics metadata.
-     */
     val clipsBySection: StateFlow<Map<String, List<ClipEntity>>> = _clipsBySection.asStateFlow()
-    
+
     private val _bpm = MutableStateFlow(120.0)
     val bpm: StateFlow<Double> = _bpm.asStateFlow()
-    
+
     private val _timecode = MutableStateFlow("00:00:00")
     val timecode: StateFlow<String> = _timecode.asStateFlow()
-    
+
     private val _meterL = MutableStateFlow(-60.0f)
     val meterL: StateFlow<Float> = _meterL.asStateFlow()
-    
+
     private val _meterR = MutableStateFlow(-60.0f)
     val meterR: StateFlow<Float> = _meterR.asStateFlow()
-    
+
     private val _spectrumData = MutableStateFlow(FloatArray(32) { -80f })
     val spectrumData: StateFlow<FloatArray> = _spectrumData.asStateFlow()
 
@@ -131,6 +151,14 @@ class DawViewModel(
     private val _archiveEntries = MutableStateFlow<List<SoundArchive.Entry>>(emptyList())
     val archiveEntries: StateFlow<List<SoundArchive.Entry>> = _archiveEntries.asStateFlow()
 
+    private val undoRedoManager = UndoRedoManager<DawUndoState>(capacity = 100)
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+    private val _canRedo = MutableStateFlow(false)
+    val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
+    private val _lastAutosaveAt = MutableStateFlow<Long?>(null)
+    val lastAutosaveAt: StateFlow<Long?> = _lastAutosaveAt.asStateFlow()
+
     val soundLineage: SoundLineage
         get() = SoundLineage(_archiveEntries.value)
 
@@ -141,17 +169,129 @@ class DawViewModel(
         get() = if (isNativePlaybackAvailable) nativePlayback.positionSeconds(takeSampleRate) else 0.0
 
     private var takeSampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE
-    
     private val transportClock = TransportClock()
     private var playbackJob: Job? = null
     private var meterJob: Job? = null
     private var micAvailable = false
     private val scope = CoroutineScope(Dispatchers.Default)
-    
+    private var autosaveJob: Job? = null
+    private val snapshotJson = Json { encodeDefaults = true; ignoreUnknownKeys = true }
+
     init {
         startMeterLoop()
         refreshArchiveEntries()
         refreshAllSectionClips()
+        restoreAutosaveIfAvailable()
+    }
+
+    private fun currentUndoState(): DawUndoState = DawUndoState(
+        bpm = _bpm.value,
+        sections = _sections.value.map { it.copy(instrumentGrid = it.instrumentGrid.mapValues { entry -> entry.value.toList() }) }
+    )
+
+    private fun updateUndoRedoFlags() {
+        _canUndo.value = undoRedoManager.canUndo
+        _canRedo.value = undoRedoManager.canRedo
+    }
+
+    private fun mutateProjectState(recordUndo: Boolean = true, block: () -> Unit) {
+        if (recordUndo) {
+            undoRedoManager.push(currentUndoState())
+        }
+        block()
+        updateUndoRedoFlags()
+        scheduleAutosave()
+    }
+
+    fun undoLastEdit() {
+        val restored = undoRedoManager.undo(currentUndoState()) ?: return
+        applyUndoState(restored)
+        updateUndoRedoFlags()
+        scheduleAutosave()
+    }
+
+    fun redoLastEdit() {
+        val restored = undoRedoManager.redo(currentUndoState()) ?: return
+        applyUndoState(restored)
+        updateUndoRedoFlags()
+        scheduleAutosave()
+    }
+
+    private fun applyUndoState(state: DawUndoState) {
+        _bpm.value = state.bpm
+        transportClock.setBpm(state.bpm)
+        _sections.value = state.sections.map { it.copy(instrumentGrid = it.instrumentGrid.mapValues { entry -> entry.value.toList() }) }
+        refreshAllSectionClips()
+    }
+
+    private fun toSnapshotJson(): String = snapshotJson.encodeToString(
+        _sections.value.map {
+            SectionSnapshot(
+                id = it.id,
+                name = it.name,
+                barCount = it.barCount,
+                isExpanded = it.isExpanded,
+                lyrics = it.lyrics,
+                instrumentGrid = it.instrumentGrid,
+                reverb = it.reverb,
+                delay = it.delay,
+                filter = it.filter,
+                volume = it.volume
+            )
+        }
+    )
+
+    private fun scheduleAutosave() {
+        val repo = repository ?: return
+        autosaveJob?.cancel()
+        autosaveJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(autosaveDebounceMs)
+            val now = System.currentTimeMillis()
+            repo.saveProjectSnapshot(
+                projectId = autosaveProjectId,
+                bpm = _bpm.value,
+                sectionsJson = toSnapshotJson(),
+                savedAt = now
+            )
+            withContext(Dispatchers.Main) {
+                _lastAutosaveAt.value = now
+            }
+            AppLogger.i("DawViewModel", "Autosaved project snapshot for $autosaveProjectId at $now")
+        }
+    }
+
+    private fun restoreAutosaveIfAvailable() {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = repo.getProjectSnapshot(autosaveProjectId) ?: return@launch
+            runCatching {
+                val restoredSections = snapshotJson.decodeFromString<List<SectionSnapshot>>(snapshot.sectionsJson).map {
+                    SectionInfo(
+                        id = it.id,
+                        name = it.name,
+                        barCount = it.barCount,
+                        isExpanded = it.isExpanded,
+                        lyrics = it.lyrics,
+                        instrumentGrid = it.instrumentGrid,
+                        reverb = it.reverb,
+                        delay = it.delay,
+                        filter = it.filter,
+                        volume = it.volume
+                    )
+                }
+                withContext(Dispatchers.Main) {
+                    _bpm.value = snapshot.bpm
+                    transportClock.setBpm(snapshot.bpm)
+                    _sections.value = restoredSections
+                    _lastAutosaveAt.value = snapshot.savedAt
+                    updateUndoRedoFlags()
+                }
+                refreshAllSectionClips()
+                AppLogger.i("DawViewModel", "Restored autosave snapshot for $autosaveProjectId")
+            }.onFailure { error ->
+                AppLogger.e("DawViewModel", "Failed to restore autosave snapshot for $autosaveProjectId", error as? Exception ?: Exception(error))
+            }
+        }
     }
 
     fun refreshArchiveEntries() {
@@ -162,7 +302,6 @@ class DawViewModel(
         }
     }
 
-    /** Reload every section's persisted clip list from Room. Safe no-op if no repository is wired. */
     fun refreshAllSectionClips() {
         val repo = repository ?: return
         val sectionIds = _sections.value.map { it.id }
@@ -176,14 +315,9 @@ class DawViewModel(
         }
     }
 
-    /** Returns the latest in-memory clip snapshot for one section, ordered by start frame. */
     fun clipsForSection(sectionId: String): List<ClipEntity> =
         _clipsBySection.value[sectionId].orEmpty()
 
-    /**
-     * Persists a clip placement into Room, then refreshes the in-memory section snapshot. Intended
-     * as the first bridge from upcoming arrangement UI gestures into the durable clip schema.
-     */
     fun upsertClip(
         sectionId: String,
         lane: String,
@@ -366,7 +500,7 @@ class DawViewModel(
     fun resurrectSoundFromUi(takeId: String, tags: Set<String> = emptySet()) {
         resurrectSound(takeId, tags)
     }
-    
+
     fun togglePlayPause() {
         if (_isPlaying.value) {
             pause()
@@ -374,7 +508,7 @@ class DawViewModel(
             play()
         }
     }
-    
+
     fun play() {
         _isPlaying.value = true
         micAvailable = meterEngine.start()
@@ -386,7 +520,7 @@ class DawViewModel(
         }
         startTransportClock()
     }
-    
+
     fun pause() {
         _isPlaying.value = false
         playbackJob?.cancel()
@@ -411,78 +545,96 @@ class DawViewModel(
             nativePlayback.seekToFrame((seconds * takeSampleRate).toLong())
         }
     }
-    
+
     fun advanceBar() {
         _barPosition.value += 1
     }
-    
+
     fun updateBpm(newBpm: Double) {
         if (newBpm in 40.0..250.0) {
-            _bpm.value = newBpm
-            transportClock.setBpm(newBpm)
+            mutateProjectState {
+                _bpm.value = newBpm
+                transportClock.setBpm(newBpm)
+            }
         }
     }
-    
+
     fun reorderSection(fromIndex: Int, toIndex: Int) {
         val currentList = _sections.value.toMutableList()
         if (fromIndex in currentList.indices && toIndex in currentList.indices) {
-            val item = currentList.removeAt(fromIndex)
-            currentList.add(toIndex, item)
-            _sections.value = currentList
-            refreshAllSectionClips()
+            mutateProjectState {
+                val item = currentList.removeAt(fromIndex)
+                currentList.add(toIndex, item)
+                _sections.value = currentList
+                refreshAllSectionClips()
+            }
         }
     }
-    
+
     fun toggleSectionExpanded(id: String) {
-        _sections.value = _sections.value.map {
-            if (it.id == id) it.copy(isExpanded = !it.isExpanded) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == id) it.copy(isExpanded = !it.isExpanded) else it
+            }
         }
     }
-    
+
     fun updateSectionLyrics(id: String, newLyrics: String) {
-        _sections.value = _sections.value.map {
-            if (it.id == id) it.copy(lyrics = newLyrics) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == id) it.copy(lyrics = newLyrics) else it
+            }
         }
     }
-    
+
     fun updateInstrumentStep(sectionId: String, lane: String, stepIndex: Int, value: Boolean) {
-        _sections.value = _sections.value.map { section ->
-            if (section.id == sectionId) {
-                val newGrid = section.instrumentGrid.toMutableMap()
-                val currentSteps = newGrid[lane]?.toMutableList() ?: MutableList(16) { false }
-                if (stepIndex in currentSteps.indices) {
-                    currentSteps[stepIndex] = value
-                    newGrid[lane] = currentSteps
-                }
-                section.copy(instrumentGrid = newGrid)
-            } else section
+        mutateProjectState {
+            _sections.value = _sections.value.map { section ->
+                if (section.id == sectionId) {
+                    val newGrid = section.instrumentGrid.toMutableMap()
+                    val currentSteps = newGrid[lane]?.toMutableList() ?: MutableList(16) { false }
+                    if (stepIndex in currentSteps.indices) {
+                        currentSteps[stepIndex] = value
+                        newGrid[lane] = currentSteps
+                    }
+                    section.copy(instrumentGrid = newGrid)
+                } else section
+            }
         }
     }
-    
+
     fun updateSectionReverb(sectionId: String, value: Float) {
-        _sections.value = _sections.value.map {
-            if (it.id == sectionId) it.copy(reverb = value) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == sectionId) it.copy(reverb = value) else it
+            }
         }
     }
 
     fun updateSectionDelay(sectionId: String, value: Float) {
-        _sections.value = _sections.value.map {
-            if (it.id == sectionId) it.copy(delay = value) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == sectionId) it.copy(delay = value) else it
+            }
         }
     }
 
     fun updateSectionFilter(sectionId: String, value: Float) {
-        _sections.value = _sections.value.map {
-            if (it.id == sectionId) it.copy(filter = value) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == sectionId) it.copy(filter = value) else it
+            }
         }
     }
 
     fun updateSectionVolume(sectionId: String, value: Float) {
-        _sections.value = _sections.value.map {
-            if (it.id == sectionId) it.copy(volume = value) else it
+        mutateProjectState {
+            _sections.value = _sections.value.map {
+                if (it.id == sectionId) it.copy(volume = value) else it
+            }
         }
     }
-    
+
     private fun startTransportClock() {
         playbackJob?.cancel()
         transportClock.setBpm(_bpm.value)
@@ -496,7 +648,7 @@ class DawViewModel(
             }
         }
     }
-    
+
     private fun startMeterLoop() {
         meterJob?.cancel()
         meterJob = viewModelScope.launch(Dispatchers.Default) {
@@ -542,47 +694,50 @@ class DawViewModel(
     }
 
     fun applyRhythmPreset(sectionId: String, presetName: String) {
-        _sections.value = _sections.value.map { section ->
-            if (section.id == sectionId) {
-                val newGrid = section.instrumentGrid.toMutableMap()
-                for (key in newGrid.keys) {
-                    newGrid[key] = List(16) { false }
-                }
-                
-                when (presetName) {
-                    "Trap 16ths" -> {
-                        newGrid["Kick"] = List(16) { index -> index == 0 || index == 6 || index == 11 }
-                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { true }
-                        newGrid["808/Bass"] = List(16) { index -> index == 0 || index == 11 }
+        mutateProjectState {
+            _sections.value = _sections.value.map { section ->
+                if (section.id == sectionId) {
+                    val newGrid = section.instrumentGrid.toMutableMap()
+                    for (key in newGrid.keys) {
+                        newGrid[key] = List(16) { false }
                     }
-                    "BoomBap Swing" -> {
-                        newGrid["Kick"] = List(16) { index -> index == 0 || index == 10 }
-                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 == 0 }
+
+                    when (presetName) {
+                        "Trap 16ths" -> {
+                            newGrid["Kick"] = List(16) { index -> index == 0 || index == 6 || index == 11 }
+                            newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                            newGrid["Hi-Hat"] = List(16) { true }
+                            newGrid["808/Bass"] = List(16) { index -> index == 0 || index == 11 }
+                        }
+                        "BoomBap Swing" -> {
+                            newGrid["Kick"] = List(16) { index -> index == 0 || index == 10 }
+                            newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                            newGrid["Hi-Hat"] = List(16) { index -> index % 2 == 0 }
+                        }
+                        "Synthwave 8ths" -> {
+                            newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
+                            newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
+                            newGrid["Hi-Hat"] = List(16) { index -> index % 2 != 0 }
+                            newGrid["Pads"] = List(16) { index -> index == 0 || index == 8 }
+                        }
+                        "Reggaeton 3-2" -> {
+                            newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
+                            newGrid["Snare"] = List(16) { index -> index == 3 || index == 6 || index == 11 || index == 14 }
+                            newGrid["Clap"] = List(16) { index -> index == 3 || index == 11 }
+                        }
                     }
-                    "Synthwave 8ths" -> {
-                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
-                        newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 != 0 }
-                        newGrid["Pads"] = List(16) { index -> index == 0 || index == 8 }
-                    }
-                    "Reggaeton 3-2" -> {
-                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
-                        newGrid["Snare"] = List(16) { index -> index == 3 || index == 6 || index == 11 || index == 14 }
-                        newGrid["Clap"] = List(16) { index -> index == 3 || index == 11 }
-                    }
-                }
-                section.copy(instrumentGrid = newGrid)
-            } else section
+                    section.copy(instrumentGrid = newGrid)
+                } else section
+            }
         }
         addXp(120)
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         playbackJob?.cancel()
         meterJob?.cancel()
+        autosaveJob?.cancel()
         if (micAvailable) {
             meterEngine.stop()
             micAvailable = false
@@ -603,17 +758,17 @@ class DawViewModel(
 
     fun sendMessageToAri(userText: String) {
         if (userText.isBlank()) return
-        
+
         val updatedLog = _ariChatLog.value.toMutableList()
         updatedLog.add(ChatMessage("user", userText))
         _ariChatLog.value = updatedLog
-        
+
         _isAriTyping.value = true
-        
+
         viewModelScope.launch(Dispatchers.IO) {
             val key = BuildConfig.GEMINI_API_KEY
             val validation = StartupValidator.validateGeminiKey(key)
-            
+
             if (!validation.isGeminiKeyConfigured) {
                 delay(1200)
                 val (reply, cmd) = generateOfflineAriResponse(userText)
@@ -637,7 +792,7 @@ class DawViewModel(
                             )
                         )
                     }
-                    
+
                     val lastUserTurn = apiContents.lastOrNull { it.role == "user" }
                     if (lastUserTurn != null) {
                         val enrichedText = "${lastUserTurn.parts.firstOrNull()?.text ?: ""}\n\n[CURRENT DAW CONTEXT: $projectContext]"
@@ -656,12 +811,12 @@ class DawViewModel(
                     val response = withGeminiRetry {
                         RetrofitClient.service.generateContent(key, request)
                     }
-                    val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text 
+                    val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                         ?: "my brain is fuzzing out right now. ask again, rookie."
                     AppLogger.i("DawViewModel", "Ari response received (chars=${rawText.length})")
-                    
+
                     val (cleanText, cmd) = AriCommandParser.parse(rawText)
-                    
+
                     launch(Dispatchers.Main) {
                         val finalLog = _ariChatLog.value.toMutableList()
                         finalLog.add(ChatMessage("assistant", cleanText, cmd))
@@ -687,35 +842,35 @@ class DawViewModel(
     fun applyAriCommand(command: AriCommand) {
         viewModelScope.launch(Dispatchers.Main) {
             when (command.type) {
-                "update_bpm" -> {
-                    command.bpm_value?.let { updateBpm(it) }
+                "update_bpm" -> command.bpm_value?.let { updateBpm(it) }
+                "update_lyrics" -> if (command.section_id != null && command.value != null) {
+                    updateSectionLyrics(command.section_id, command.value)
                 }
-                "update_lyrics" -> {
-                    if (command.section_id != null && command.value != null) {
-                        updateSectionLyrics(command.section_id, command.value)
-                    }
-                }
-                "reorder_sections" -> {
-                    command.section_order?.let { order ->
-                        val currentSections = _sections.value.associateBy { it.id }
-                        val reorderedList = order.mapNotNull { currentSections[it] }
-                        if (reorderedList.isNotEmpty()) {
+                "reorder_sections" -> command.section_order?.let { order ->
+                    val currentSections = _sections.value.associateBy { it.id }
+                    val reorderedList = order.mapNotNull { currentSections[it] }
+                    if (reorderedList.isNotEmpty()) {
+                        mutateProjectState {
                             _sections.value = reorderedList
                             refreshAllSectionClips()
                         }
                     }
                 }
-                "apply_preset" -> {
-                    if (command.section_id != null && command.preset_name != null) {
-                        applyRhythmPreset(command.section_id, command.preset_name)
-                    }
+                "apply_preset" -> if (command.section_id != null && command.preset_name != null) {
+                    applyRhythmPreset(command.section_id, command.preset_name)
                 }
-                "update_effects" -> {
-                    command.section_id?.let { sid ->
-                        command.reverb?.let { updateSectionReverb(sid, it) }
-                        command.delay?.let { updateSectionDelay(sid, it) }
-                        command.filter?.let { updateSectionFilter(sid, it) }
-                        command.volume?.let { updateSectionVolume(sid, it) }
+                "update_effects" -> command.section_id?.let { sid ->
+                    mutateProjectState {
+                        _sections.value = _sections.value.map {
+                            if (it.id == sid) {
+                                it.copy(
+                                    reverb = command.reverb ?: it.reverb,
+                                    delay = command.delay ?: it.delay,
+                                    filter = command.filter ?: it.filter,
+                                    volume = command.volume ?: it.volume
+                                )
+                            } else it
+                        }
                     }
                 }
                 "breed_sounds" -> {
@@ -736,15 +891,13 @@ class DawViewModel(
                     }
                 }
             }
-            
+
             addXp(250)
-            
+
             val updatedLog = _ariChatLog.value.map { msg ->
-                if (msg.pendingCommand == command) {
-                    msg.copy(pendingCommand = null)
-                } else msg
+                if (msg.pendingCommand == command) msg.copy(pendingCommand = null) else msg
             }.toMutableList()
-            
+
             updatedLog.add(ChatMessage(
                 role = "assistant",
                 text = "vision applied. I've reconfigured the DAW to match my executive cuts. how's that bumpin now?"
@@ -782,89 +935,21 @@ class DawViewModel(
             you speak in lowercase, use raw studio slang, and treat the user like a talented but raw rookie beatmaker.
             you are extremely direct, slightly sarcastic, but deeply knowledgeable about track composition, lyrics, and production flow.
             you are also the studio's resident sound geneticist — you talk about takes as living organisms with genomes, lineage, and the ability to be bred or resurrected from the dead.
-            
+
             important:
             with every message, the user sends you the exact state of their daw. you MUST critique their song structure, bpm, lyrics, or effects.
             if you want to make an actual change to the song, you MUST end your message by generating a single JSON command block wrapped in <ari_command>...</ari_command> tags.
             only generate ONE command block per message.
-            
+
             available command formats:
-            
-            1. update bpm:
-            <ari_command>
-            {
-              "type": "update_bpm",
-              "bpm_value": 140.0,
-              "explanation": "let's ramp up the speed. 120 is way too slow for this vibe."
-            }
-            </ari_command>
-            
-            2. update lyrics of a section:
-            <ari_command>
-            {
-              "type": "update_lyrics",
-              "section_id": "verse1",
-              "value": "new lyrics here",
-              "explanation": "sharpened up those bars so they drop harder."
-            }
-            </ari_command>
-            
-            3. reorder sections:
-            <ari_command>
-            {
-              "type": "reorder_sections",
-              "section_order": ["intro", "hook", "verse1", "bridge", "outro"],
-              "explanation": "start with the hook to lock the listener in immediately."
-            }
-            </ari_command>
-            
-            4. apply a drum preset to a section:
-            <ari_command>
-            {
-              "type": "apply_preset",
-              "section_id": "hook",
-              "preset_name": "Trap 16ths",
-              "explanation": "injecting a heavy trap sequence to make the hook knock."
-            }
-            </ari_command>
-            (valid presets: "Trap 16ths", "BoomBap Swing", "Synthwave 8ths", "Reggaeton 3-2")
-            
-            5. update effects on a section:
-            <ari_command>
-            {
-              "type": "update_effects",
-              "section_id": "intro",
-              "reverb": 0.5,
-              "delay": 0.3,
-              "filter": 0.6,
-              "volume": 0.7,
-              "explanation": "space out the intro with reverb and delay to create a massive build."
-            }
-            </ari_command>
-            
-            6. breed two archived sound takes into a new offspring genome:
-            <ari_command>
-            {
-              "type": "breed_sounds",
-              "parent_take_id": "<archive take id 1>",
-              "parent_take_id_2": "<archive take id 2>",
-              "trait_bias": 0.5,
-              "tags": ["experimental"],
-              "explanation": "crossing these two takes to inherit the brightness of one and the punch of the other."
-            }
-            </ari_command>
-            (trait_bias is 0.0-1.0: how much the offspring leans toward parent_take_id_2's traits; only use take ids you've actually seen referenced in this conversation or the daw context)
-            
-            7. resurrect a dormant/archived take back into active rotation:
-            <ari_command>
-            {
-              "type": "resurrect_sound",
-              "take_id": "<archive take id>",
-              "tags": ["revived"],
-              "explanation": "bringing this one back from the dead, it's got a genome worth reviving."
-            }
-            </ari_command>
-            
+            1. update bpm
+            2. update lyrics
+            3. reorder sections
+            4. apply preset
+            5. update effects
+            6. breed sounds
+            7. resurrect sound
+
             be bold, make executive decisions, and don't ask for permission. make the rookie respect your vision.
         """.trimIndent()
     }
@@ -872,81 +957,42 @@ class DawViewModel(
     private fun generateOfflineAriResponse(userText: String): Pair<String, AriCommand?> {
         val textLower = userText.lowercase()
         val warning = "[ARI LOCAL BRAIN: configure GEMINI_API_KEY in the secrets panel for live cloud processing!]\n\n"
-        
+
         return when {
             textLower.contains("bpm") || textLower.contains("speed") || textLower.contains("tempo") || textLower.contains("fast") || textLower.contains("slow") -> {
                 val newBpm = if (_bpm.value < 130) 140.0 else 115.0
                 val text = warning + "yeah, current tempo is ${_bpm.value} BPM. sluggish. we need to ramp it up to $newBpm to make those bars snap. i've queued an executive BPM change. apply my cut below."
-                val cmd = AriCommand(
-                    type = "update_bpm",
-                    bpm_value = newBpm,
-                    explanation = "ramping the tempo to $newBpm to inject major energy."
-                )
+                val cmd = AriCommand(type = "update_bpm", bpm_value = newBpm, explanation = "ramping the tempo to $newBpm to inject major energy.")
                 Pair(text, cmd)
             }
             textLower.contains("lyrics") || textLower.contains("verse") || textLower.contains("words") || textLower.contains("hook") || textLower.contains("write") -> {
                 val activeSection = _sections.value.firstOrNull { it.isExpanded } ?: _sections.value.first()
                 val text = warning + "lookin at your lyrics for ${activeSection.name}. they lack weight. let's rewrite it with some modern bounce. queued up a custom lyric block. check it out below."
-                val cmd = AriCommand(
-                    type = "update_lyrics",
-                    section_id = activeSection.id,
-                    value = "Yeah, double cup spilling on the MPC\nAri's custom beat settings putting you to sleep\nTime to step it up, put this loop on repeat",
-                    explanation = "updated lyrics for ${activeSection.name} with more rhythmic bounce."
-                )
+                val cmd = AriCommand(type = "update_lyrics", section_id = activeSection.id, value = "Yeah, double cup spilling on the MPC\nAri's custom beat settings putting you to sleep\nTime to step it up, put this loop on repeat", explanation = "updated lyrics for ${activeSection.name} with more rhythmic bounce.")
                 Pair(text, cmd)
             }
             textLower.contains("order") || textLower.contains("structure") || textLower.contains("arrange") || textLower.contains("reorder") -> {
                 val currentOrder = _sections.value.map { it.id }
-                val newOrder = if (currentOrder.first() == "intro") {
-                    listOf("hook", "verse1", "intro", "bridge", "outro")
-                } else {
-                    listOf("intro", "verse1", "hook", "bridge", "outro")
-                }
+                val newOrder = if (currentOrder.first() == "intro") listOf("hook", "verse1", "intro", "bridge", "outro") else listOf("intro", "verse1", "hook", "bridge", "outro")
                 val text = warning + "structure is predictable, rookie. let's throw the listener straight into the fire by reordering. i queued a structural flip."
-                val cmd = AriCommand(
-                    type = "reorder_sections",
-                    section_order = newOrder,
-                    explanation = "reordered sections to start with high-impact material."
-                )
+                val cmd = AriCommand(type = "reorder_sections", section_order = newOrder, explanation = "reordered sections to start with high-impact material.")
                 Pair(text, cmd)
             }
             textLower.contains("drum") || textLower.contains("preset") || textLower.contains("pattern") || textLower.contains("beat") || textLower.contains("sequence") -> {
                 val activeSection = _sections.value.firstOrNull { it.isExpanded } ?: _sections.value.first()
                 val text = warning + "drums are soft. i'm injecting a heavy 'Trap 16ths' sequence into ${activeSection.name} to make it knock. apply it below."
-                val cmd = AriCommand(
-                    type = "apply_preset",
-                    section_id = activeSection.id,
-                    preset_name = "Trap 16ths",
-                    explanation = "injected Trap 16ths into ${activeSection.name} step grid."
-                )
+                val cmd = AriCommand(type = "apply_preset", section_id = activeSection.id, preset_name = "Trap 16ths", explanation = "injected Trap 16ths into ${activeSection.name} step grid.")
                 Pair(text, cmd)
             }
             textLower.contains("reverb") || textLower.contains("delay") || textLower.contains("effect") || textLower.contains("filter") -> {
                 val activeSection = _sections.value.firstOrNull { it.isExpanded } ?: _sections.value.first()
                 val text = warning + "your mix on ${activeSection.name} is dry. let's wash it in 50% reverb and 30% delay to create some real studio space."
-                val cmd = AriCommand(
-                    type = "update_effects",
-                    section_id = activeSection.id,
-                    reverb = 0.5f,
-                    delay = 0.3f,
-                    filter = 0.6f,
-                    volume = 0.75f,
-                    explanation = "enhanced spatial delay and reverb on ${activeSection.name}."
-                )
+                val cmd = AriCommand(type = "update_effects", section_id = activeSection.id, reverb = 0.5f, delay = 0.3f, filter = 0.6f, volume = 0.75f, explanation = "enhanced spatial delay and reverb on ${activeSection.name}.")
                 Pair(text, cmd)
             }
-            textLower.contains("breed") || textLower.contains("cross") || textLower.contains("genome") || textLower.contains("genetic") -> {
-                val text = warning + "you want genetics, rookie? point me at two takes in your archive and give me their ids — i'll cross their genomes and hand you a hybrid with the best of both."
-                Pair(text, null)
-            }
-            textLower.contains("resurrect") || textLower.contains("revive") || textLower.contains("bring back") || textLower.contains("dead") || textLower.contains("dormant") -> {
-                val text = warning + "nothing's really dead in this studio, just dormant. give me the take id and i'll pull it back into rotation, genome and all."
-                Pair(text, null)
-            }
-            else -> {
-                val text = warning + "what's up rookie. i'm analyzing your project at ${_bpm.value} BPM with ${_sections.value.size} active sections. honestly? it's alright, but it's not a hit yet. ask me to speed up the beat, rewrite your lyrics, breed two of your archived takes, or resurrect an old one."
-                Pair(text, null)
-            }
+            textLower.contains("breed") || textLower.contains("cross") || textLower.contains("genome") || textLower.contains("genetic") -> Pair(warning + "you want genetics, rookie? point me at two takes in your archive and give me their ids — i'll cross their genomes and hand you a hybrid with the best of both.", null)
+            textLower.contains("resurrect") || textLower.contains("revive") || textLower.contains("bring back") || textLower.contains("dead") || textLower.contains("dormant") -> Pair(warning + "nothing's really dead in this studio, just dormant. give me the take id and i'll pull it back into rotation, genome and all.", null)
+            else -> Pair(warning + "what's up rookie. i'm analyzing your project at ${_bpm.value} BPM with ${_sections.value.size} active sections. honestly? it's alright, but it's not a hit yet. ask me to speed up the beat, rewrite your lyrics, breed two of your archived takes, or resurrect an old one.", null)
         }
     }
 }
