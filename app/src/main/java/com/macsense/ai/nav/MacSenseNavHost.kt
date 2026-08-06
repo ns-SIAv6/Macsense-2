@@ -1,6 +1,7 @@
 package com.macsense.ai.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -22,10 +23,11 @@ import com.macsense.ai.ui.viewmodel.DawViewModelFactory
  */
 @Composable
 fun MacSenseNavHost(navController: NavHostController, repository: MacSenseRepository? = null) {
+    val context = LocalContext.current
     NavHost(navController = navController, startDestination = Routes.DAW) {
         composable(Routes.DAW) {
             val dawViewModel: DawViewModel = if (repository != null) {
-                viewModel(factory = DawViewModelFactory(repository))
+                viewModel(factory = DawViewModelFactory(repository, context = context))
             } else {
                 viewModel()
             }
@@ -37,7 +39,7 @@ fun MacSenseNavHost(navController: NavHostController, repository: MacSenseReposi
         composable(Routes.LYRICS_STUDIO) { LyricsStudioScreen() }
         composable(Routes.BREEDING) {
             val breedingViewModel: DawViewModel = if (repository != null) {
-                viewModel(factory = DawViewModelFactory(repository))
+                viewModel(factory = DawViewModelFactory(repository, context = context))
             } else {
                 viewModel()
             }
