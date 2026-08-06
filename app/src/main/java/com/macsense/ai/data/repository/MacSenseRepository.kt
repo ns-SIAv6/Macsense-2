@@ -6,6 +6,7 @@ import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.Converters
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
+import com.macsense.ai.data.local.SectionEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
 import com.macsense.ai.data.local.SoundGenomeEntity
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +81,27 @@ class MacSenseRepository(private val dao: MacSenseDao) {
 
     suspend fun deleteClipsForSection(sectionId: String) {
         dao.deleteClipsForSection(sectionId)
+    }
+
+    /** Persists a section's full state (metadata, lyrics, step grid, effect knobs). */
+    suspend fun upsertSection(section: SectionEntity) {
+        dao.insertSection(section)
+    }
+
+    suspend fun getSectionsForProject(projectId: String): List<SectionEntity> =
+        dao.getSectionsForProject(projectId)
+
+    fun observeSectionsForProject(projectId: String): Flow<List<SectionEntity>> =
+        dao.observeSectionsForProject(projectId)
+
+    suspend fun getSectionById(id: String): SectionEntity? = dao.getSectionById(id)
+
+    suspend fun deleteSection(id: String) {
+        dao.deleteSection(id)
+    }
+
+    suspend fun deleteSectionsForProject(projectId: String) {
+        dao.deleteSectionsForProject(projectId)
     }
 
     private fun SoundArchiveEntryEntity.toDomain(): SoundArchive.Entry = SoundArchive.Entry(
