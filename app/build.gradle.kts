@@ -23,12 +23,6 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Crash reporting is off by default everywhere until a vendor (Crashlytics vs
-        // Sentry) is chosen and its SDK/DSN wired in — see CrashReporting.kt. Flip this to
-        // true for the release build type only once that human decision is made and the
-        // vendor dependency + config file (e.g. google-services.json) are added.
-        buildConfigField("boolean", "CRASH_REPORTING_ENABLED", "false")
-
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
@@ -52,11 +46,6 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Flip to true once a crash-reporting vendor is selected and configured
-            // (tracked in issue #32 / #52). Left false here so no-op reporter stays in
-            // effect and no release build silently starts depending on missing vendor
-            // config.
-            buildConfigField("boolean", "CRASH_REPORTING_ENABLED", "false")
         }
     }
     compileOptions {
