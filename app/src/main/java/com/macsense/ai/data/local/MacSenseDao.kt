@@ -61,4 +61,13 @@ interface MacSenseDao {
 
     @Query("DELETE FROM clips WHERE section_id = :sectionId")
     suspend fun deleteClipsForSection(sectionId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProjectSnapshot(snapshot: ProjectSnapshotEntity)
+
+    @Query("SELECT * FROM project_snapshots WHERE project_id = :projectId")
+    suspend fun getProjectSnapshot(projectId: String): ProjectSnapshotEntity?
+
+    @Query("DELETE FROM project_snapshots WHERE project_id = :projectId")
+    suspend fun deleteProjectSnapshot(projectId: String)
 }
