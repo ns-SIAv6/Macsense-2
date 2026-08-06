@@ -2,6 +2,7 @@ package com.macsense.ai.data.repository
 
 import com.macsense.ai.audio.SoundArchive
 import com.macsense.ai.audio.SoundGenome
+import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.Converters
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
@@ -59,6 +60,27 @@ class MacSenseRepository(private val dao: MacSenseDao) {
 
     suspend fun getSoundGenomesForProject(projectId: String): List<SoundGenome> =
         dao.getSoundGenomesForProject(projectId).mapNotNull { converters.toSoundGenome(it.data) }
+
+    /** Places or updates a clip on a section's timeline. See [ClipEntity] for field semantics. */
+    suspend fun upsertClip(clip: ClipEntity) {
+        dao.insertClip(clip)
+    }
+
+    suspend fun getClipsForSection(sectionId: String): List<ClipEntity> =
+        dao.getClipsForSection(sectionId)
+
+    fun observeClipsForSection(sectionId: String): Flow<List<ClipEntity>> =
+        dao.observeClipsForSection(sectionId)
+
+    suspend fun getClipById(id: String): ClipEntity? = dao.getClipById(id)
+
+    suspend fun deleteClip(id: String) {
+        dao.deleteClip(id)
+    }
+
+    suspend fun deleteClipsForSection(sectionId: String) {
+        dao.deleteClipsForSection(sectionId)
+    }
 
     private fun SoundArchiveEntryEntity.toDomain(): SoundArchive.Entry = SoundArchive.Entry(
         takeId = takeId,
