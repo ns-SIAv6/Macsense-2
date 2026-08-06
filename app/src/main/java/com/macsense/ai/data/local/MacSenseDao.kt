@@ -43,4 +43,22 @@ interface MacSenseDao {
 
     @Query("SELECT * FROM sound_genomes WHERE projectId = :projectId")
     suspend fun getSoundGenomesForProject(projectId: String): List<SoundGenomeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertClip(clip: ClipEntity)
+
+    @Query("SELECT * FROM clips WHERE section_id = :sectionId ORDER BY start_frame ASC")
+    suspend fun getClipsForSection(sectionId: String): List<ClipEntity>
+
+    @Query("SELECT * FROM clips WHERE section_id = :sectionId ORDER BY start_frame ASC")
+    fun observeClipsForSection(sectionId: String): Flow<List<ClipEntity>>
+
+    @Query("SELECT * FROM clips WHERE id = :id")
+    suspend fun getClipById(id: String): ClipEntity?
+
+    @Query("DELETE FROM clips WHERE id = :id")
+    suspend fun deleteClip(id: String)
+
+    @Query("DELETE FROM clips WHERE section_id = :sectionId")
+    suspend fun deleteClipsForSection(sectionId: String)
 }

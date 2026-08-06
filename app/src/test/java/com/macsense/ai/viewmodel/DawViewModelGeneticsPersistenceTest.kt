@@ -3,6 +3,7 @@ package com.macsense.ai.viewmodel
 import com.macsense.ai.api.AriCommand
 import com.macsense.ai.audio.SoundArchive
 import com.macsense.ai.audio.SoundGenome
+import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
@@ -44,7 +45,9 @@ class DawViewModelGeneticsPersistenceTest {
         val projects = mutableListOf<ProjectEntity>()
         val archiveEntries = mutableListOf<SoundArchiveEntryEntity>()
         val genomes = mutableListOf<SoundGenomeEntity>()
+        val clips = mutableListOf<ClipEntity>()
         private val archiveFlow = MutableStateFlow<List<SoundArchiveEntryEntity>>(emptyList())
+        private val clipsFlow = MutableStateFlow<List<ClipEntity>>(emptyList())
 
         override suspend fun insertProject(project: ProjectEntity) { projects.add(project) }
         override suspend fun getProjectById(id: String) = projects.find { it.id == id }
@@ -75,6 +78,29 @@ class DawViewModelGeneticsPersistenceTest {
         override suspend fun getSoundGenomeById(id: String) = genomes.find { it.id == id }
         override suspend fun getSoundGenomesForProject(projectId: String) =
             genomes.filter { it.projectId == projectId }
+
+        override suspend fun insertClip(clip: ClipEntity) {
+            clips.removeIf { it.id == clip.id }
+            clips.add(clip)
+            clipsFlow.value = clips.toList()
+        }
+
+        override suspend fun getClipsForSection(sectionId: String) =
+            clips.filter { it.sectionId == sectionId }.sortedBy { it.startFrame }
+
+        override fun observeClipsForSection(sectionId: String) = clipsFlow.asStateFlow()
+
+        override suspend fun getClipById(id: String) = clips.find { it.id == id }
+
+        override suspend fun deleteClip(id: String) {
+            clips.removeIf { it.id == id }
+            clipsFlow.value = clips.toList()
+        }
+
+        override suspend fun deleteClipsForSection(sectionId: String) {
+            clips.removeIf { it.sectionId == sectionId }
+            clipsFlow.value = clips.toList()
+        }
     }
 
     private lateinit var dao: FakeMacSenseRepositoryDao

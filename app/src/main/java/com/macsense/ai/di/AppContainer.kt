@@ -13,7 +13,7 @@ class AppContainer(private val context: Context) {
             MacSenseDatabase::class.java,
             "macsense_db"
         )
-        .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
+        .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4)
         // Safety net for PRODUCTION_GAP_ANALYSIS.md item A ("Room migration strategy ... has no
         // destructive-migration fallback declared, so a missed migration in a future release
         // would crash on upgrade") and PRODUCTION_HARDENING_PLAN.md Phase 1.
