@@ -18,12 +18,28 @@ data class ProjectEntity(
     @ColumnInfo(name = "bpm", defaultValue = "120.0") val bpm: Double
 )
 
+/**
+ * A song section ("Intro", "Verse 1", etc). Originally this table only tracked ordering metadata
+ * while everything else (lyrics, step-sequencer grid, effect knob values, expand/collapse state)
+ * lived exclusively in `DawViewModel`'s in-memory `StateFlow` — meaning a killed process or app
+ * update silently discarded a user's lyrics and beat programming. As of this migration, every
+ * field `DawViewModel.SectionInfo` exposes has a durable column here, and `instrumentGridJson`
+ * stores the 12-lane step grid as JSON via [Converters.fromInstrumentGrid]/[toInstrumentGrid].
+ */
 @Entity(tableName = "sections")
 data class SectionEntity(
     @PrimaryKey val id: String,
-    val projectId: String,
+    @ColumnInfo(name = "project_id", defaultValue = "default-project") val projectId: String,
     val name: String,
-    val orderIndex: Int
+    val orderIndex: Int,
+    @ColumnInfo(name = "bar_count", defaultValue = "8") val barCount: Int = 8,
+    @ColumnInfo(name = "is_expanded", defaultValue = "0") val isExpanded: Boolean = false,
+    @ColumnInfo(name = "lyrics", defaultValue = "''") val lyrics: String = "",
+    @ColumnInfo(name = "instrument_grid_json", defaultValue = "'{}'") val instrumentGridJson: String = "{}",
+    @ColumnInfo(name = "reverb", defaultValue = "0.25") val reverb: Float = 0.25f,
+    @ColumnInfo(name = "delay", defaultValue = "0.15") val delay: Float = 0.15f,
+    @ColumnInfo(name = "filter", defaultValue = "0.85") val filter: Float = 0.85f,
+    @ColumnInfo(name = "volume", defaultValue = "0.75") val volume: Float = 0.75f
 )
 
 @Entity(tableName = "sound_genomes")
