@@ -1,6 +1,8 @@
 package com.macsense.ai.data.local
 
+import androidx.room.Database
 import androidx.room.Room
+import androidx.room.TypeConverters
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
