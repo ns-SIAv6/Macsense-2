@@ -1,5 +1,6 @@
 package com.macsense.ai.ui.viewmodel
 
+import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
@@ -16,6 +17,7 @@ class DawViewModelFactoryTest {
 
     private class NoOpDao : MacSenseDao {
         private val archiveFlow = MutableStateFlow<List<SoundArchiveEntryEntity>>(emptyList())
+        private val clipsFlow = MutableStateFlow<List<ClipEntity>>(emptyList())
         override suspend fun insertProject(project: ProjectEntity) {}
         override suspend fun getProjectById(id: String): ProjectEntity? = null
         override fun getAllProjects() = flowOf(emptyList<ProjectEntity>())
@@ -28,6 +30,12 @@ class DawViewModelFactoryTest {
         override suspend fun insertSoundGenome(genome: SoundGenomeEntity) {}
         override suspend fun getSoundGenomeById(id: String): SoundGenomeEntity? = null
         override suspend fun getSoundGenomesForProject(projectId: String): List<SoundGenomeEntity> = emptyList()
+        override suspend fun insertClip(clip: ClipEntity) {}
+        override suspend fun getClipsForSection(sectionId: String): List<ClipEntity> = emptyList()
+        override fun observeClipsForSection(sectionId: String) = clipsFlow.asStateFlow()
+        override suspend fun getClipById(id: String): ClipEntity? = null
+        override suspend fun deleteClip(id: String) {}
+        override suspend fun deleteClipsForSection(sectionId: String) {}
     }
 
     @Test
