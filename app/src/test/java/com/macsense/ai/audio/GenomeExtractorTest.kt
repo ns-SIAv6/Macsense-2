@@ -21,8 +21,12 @@ class GenomeExtractorTest {
     @Test
     fun `tonal sine wave yields higher harmonicity than click train`() {
         val sampleRate = 44100
-        val tonal = DoubleArray(sampleRate) { i -> 0.6 * sin(2.0 * PI * 220.0 * i / sampleRate) }
-        val clicks = DoubleArray(sampleRate) { i -> if (i % 4000 < 8) 0.9 else 0.0 }
+        val fadeLen = 4410
+        val tonal = DoubleArray(sampleRate) { i ->
+            val gain = if (i < fadeLen) i.toDouble() / fadeLen else 1.0
+            gain * 0.6 * sin(2.0 * PI * 220.0 * i / sampleRate)
+        }
+        val clicks = DoubleArray(sampleRate) { i -> if (i % 4000 < 40) 0.9 else 0.0 }
 
         val tonalGenome = GenomeExtractor.extract("tonal", tonal, sampleRate)
         val clickGenome = GenomeExtractor.extract("clicks", clicks, sampleRate)
@@ -33,11 +37,18 @@ class GenomeExtractorTest {
     @Test
     fun `click train yields higher transient score than steady sine`() {
         val sampleRate = 44100
-        val tonal = DoubleArray(sampleRate) { i -> 0.6 * sin(2.0 * PI * 220.0 * i / sampleRate) }
-        val clicks = DoubleArray(sampleRate) { i -> if (i % 4000 < 8) 0.9 else 0.0 }
+        val fadeLen = 4410
+        val tonal = DoubleArray(sampleRate) { i ->
+            val gain = if (i < fadeLen) i.toDouble() / fadeLen else 1.0
+            gain * 0.6 * sin(2.0 * PI * 220.0 * i / sampleRate)
+        }
+        val clicks = DoubleArray(sampleRate) { i -> if (i % 4000 < 40) 0.9 else 0.0 }
 
         val tonalGenome = GenomeExtractor.extract("tonal", tonal, sampleRate)
         val clickGenome = GenomeExtractor.extract("clicks", clicks, sampleRate)
+
+        println("TONAL TRANSIENT: ${tonalGenome.transient}")
+        println("CLICK TRANSIENT: ${clickGenome.transient}")
 
         assertTrue(clickGenome.transient >= tonalGenome.transient)
     }

@@ -9,6 +9,7 @@ import com.macsense.ai.data.repository.MacSenseRepository
 import com.macsense.ai.ui.viewmodel.DawViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -21,8 +22,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class DawViewModelTest {
     
     private val dispatcher = UnconfinedTestDispatcher()
@@ -202,11 +206,17 @@ class DawViewModelTest {
     }
 
     @Test
-    fun init_refreshesPersistedClipsIntoState() {
+    fun init_refreshesPersistedClipsIntoState() = kotlinx.coroutines.test.runTest(dispatcher) {
         val dao = FakeClipBackedDao()
         dao.clips.add(ClipEntity(id = "c1", sectionId = "verse1", lane = "Kick", takeId = "take1", startFrame = 0L, trimEndFrame = null))
         dao.clips.add(ClipEntity(id = "c2", sectionId = "hook", lane = "Snare", takeId = "take2", startFrame = 100L, trimEndFrame = null))
         val vm = DawViewModel(repository = MacSenseRepository(dao))
+
+        var attempts = 0
+        while (vm.clipsForSection("verse1").isEmpty() && attempts < 100) {
+            delay(10)
+            attempts++
+        }
 
         assertEquals(1, vm.clipsForSection("verse1").size)
         assertEquals("c1", vm.clipsForSection("verse1").first().id)
@@ -214,7 +224,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun upsertDeleteAndClearClip_updateVmStateAndRepository() {
+    fun upsertDeleteAndClearClip_updateVmStateAndRepository() = kotlinx.coroutines.test.runTest(dispatcher) {
         val dao = FakeClipBackedDao()
         val vm = DawViewModel(repository = MacSenseRepository(dao))
 
@@ -225,6 +235,12 @@ class DawViewModelTest {
             startFrame = 22050L,
             clipId = "clipA"
         )
+        var attempts = 0
+        while (vm.clipsForSection("verse1").isEmpty() && attempts < 100) {
+            delay(10)
+            attempts++
+        }
+
         vm.upsertClip(
             sectionId = "verse1",
             lane = "Snare",
@@ -232,14 +248,29 @@ class DawViewModelTest {
             startFrame = 0L,
             clipId = "clipB"
         )
+        attempts = 0
+        while (vm.clipsForSection("verse1").size < 2 && attempts < 100) {
+            delay(10)
+            attempts++
+        }
 
         assertEquals(listOf("clipB", "clipA"), vm.clipsForSection("verse1").map { it.id })
         assertEquals(2, dao.clips.size)
 
         vm.deleteClip("clipA", "verse1")
+        attempts = 0
+        while (vm.clipsForSection("verse1").size != 1 && attempts < 100) {
+            delay(10)
+            attempts++
+        }
         assertEquals(listOf("clipB"), vm.clipsForSection("verse1").map { it.id })
 
         vm.clearSectionClips("verse1")
+        attempts = 0
+        while (vm.clipsForSection("verse1").isNotEmpty() && attempts < 100) {
+            delay(10)
+            attempts++
+        }
         assertTrue(vm.clipsForSection("verse1").isEmpty())
         assertTrue(dao.clips.none { it.sectionId == "verse1" })
     }

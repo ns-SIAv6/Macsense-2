@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.macsense.ai.dsp.LoudnessMeter
 import com.macsense.ai.dsp.TruePeakMeter
+import com.macsense.ai.mastering.ABComparisonPlayer
+import com.macsense.ai.mastering.MasteringAnalyzer
+import com.macsense.ai.mastering.MasteringChainRecommender
+import com.macsense.ai.mastering.TargetProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,7 +16,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.sin
-import kotlin.random.Random
 
 data class MasteringPreset(
     val id: String,
@@ -63,6 +66,25 @@ class MasteringViewModel : ViewModel() {
     
     private val _selectedPresetId = MutableStateFlow("streaming")
     val selectedPresetId: StateFlow<String> = _selectedPresetId.asStateFlow()
+
+    // Extended Phase 4 State variables
+    private val _targetProfiles = MutableStateFlow(TargetProfile.DEFAULT_PROFILES)
+    val targetProfiles: StateFlow<List<TargetProfile>> = _targetProfiles.asStateFlow()
+
+    private val _selectedProfile = MutableStateFlow(TargetProfile.POP)
+    val selectedProfile: StateFlow<TargetProfile> = _selectedProfile.asStateFlow()
+
+    private val _analysisResult = MutableStateFlow<MasteringAnalyzer.AnalysisResult?>(null)
+    val analysisResult: StateFlow<MasteringAnalyzer.AnalysisResult?> = _analysisResult.asStateFlow()
+
+    private val _pendingProposal = MutableStateFlow<MasteringChainRecommender.MasteringChainProposal?>(null)
+    val pendingProposal: StateFlow<MasteringChainRecommender.MasteringChainProposal?> = _pendingProposal.asStateFlow()
+
+    private val _isLevelMatched = MutableStateFlow(false)
+    val isLevelMatched: StateFlow<Boolean> = _isLevelMatched.asStateFlow()
+
+    private val _isPlayB = MutableStateFlow(false)
+    val isPlayB: StateFlow<Boolean> = _isPlayB.asStateFlow()
     
     private var dspJob: Job? = null
     
@@ -99,6 +121,74 @@ class MasteringViewModel : ViewModel() {
                 "Punchy" -> setEqGains(1.5f, -1f, 1.5f)
                 "Aggressive" -> setEqGains(3f, 2f, 3f)
             }
+        }
+    }
+
+    // Extended Phase 4 Mastering Operations
+    fun selectProfile(profileId: String) {
+        _targetProfiles.value.find { it.id == profileId }?.let { profile ->
+            _selectedProfile.value = profile
+            setTargetLufs(profile.targetLufs)
+            setCeilingDbtp(profile.ceilingDbtp)
+        }
+    }
+
+    fun importReferenceTrack(channels: Array<DoubleArray>, sampleRate: Int, name: String) {
+        val newProfile = TargetProfile.importFromReferenceTrack(channels, sampleRate, name)
+        _targetProfiles.value = _targetProfiles.value + newProfile
+        selectProfile(newProfile.id)
+    }
+
+    fun analyzeMix(channels: Array<DoubleArray>, sampleRate: Int) {
+        val result = MasteringAnalyzer.analyzeMix(channels, sampleRate, _selectedProfile.value)
+        _analysisResult.value = result
+    }
+
+    fun requestAriMasteringProposal() {
+        val analysis = _analysisResult.value
+        val target = _selectedProfile.value
+        if (analysis != null) {
+            val recommendation = MasteringChainRecommender.recommendChain(analysis, target)
+            _pendingProposal.value = recommendation
+        }
+    }
+
+    fun confirmProposal() {
+        _pendingProposal.value?.let { proposal ->
+            setEqGains(proposal.eqLowGain, proposal.eqMidGain, proposal.eqHighGain)
+            setLimiterThreshold(proposal.limiterThreshold)
+            setCompressorThreshold(proposal.compressorThreshold)
+            _pendingProposal.value = null
+        }
+    }
+
+    fun rejectProposal() {
+        _pendingProposal.value = null
+    }
+
+    fun setLevelMatch(enabled: Boolean) {
+        _isLevelMatched.value = enabled
+    }
+
+    fun setPlayB(enabled: Boolean) {
+        _isPlayB.value = enabled
+    }
+
+    fun processComparison(channels: Array<DoubleArray>, sampleRate: Int): Array<DoubleArray> {
+        return if (!_isPlayB.value) {
+            channels
+        } else {
+            ABComparisonPlayer.processMastered(
+                channels = channels,
+                eqLow = _eqLowGain.value,
+                eqMid = _eqMidGain.value,
+                eqHigh = _eqHighGain.value,
+                limiterThreshold = _limiterThreshold.value,
+                compressorThreshold = _compressorThreshold.value,
+                ceilingDbtp = _ceilingDbtp.value,
+                levelMatch = _isLevelMatched.value,
+                sampleRate = sampleRate
+            )
         }
     }
     
