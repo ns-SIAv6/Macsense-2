@@ -21,6 +21,7 @@ import com.macsense.ai.audio.SoundBreeder
 import com.macsense.ai.audio.SoundGenome
 import com.macsense.ai.audio.SoundLineage
 import com.macsense.ai.audio.TransportClock
+import com.macsense.ai.data.DawPreferences
 import com.macsense.ai.data.repository.MacSenseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,16 @@ data class SectionInfo(
     val volume: Float = 0.75f
 )
 
+/**
+ * Timeline scroll axis for the main DAW screen (Phase 4). VERTICAL is the original stacked
+ * scroll behavior; HORIZONTAL lays the same [SectionInfo] cards out left-to-right for
+ * arrangement comparison, with a compact collapsed strip presentation.
+ */
+enum class ViewMode {
+    VERTICAL,
+    HORIZONTAL
+}
+
 fun createDefaultGrid(): Map<String, List<Boolean>> {
     val lanes = listOf(
         "808/Bass", "Kick", "Snare", "Hi-Hat", "Clap", "Percussion",
@@ -69,13 +80,18 @@ class DawViewModel(
     private val nativePlayback: NativePlaybackEngine = NativePlaybackEngine(),
     private val repository: MacSenseRepository? = null,
     private val genomeProjectId: String = "default-project",
-    private val breeder: SoundBreeder = SoundBreeder()
+    private val breeder: SoundBreeder = SoundBreeder(),
+    private val preferences: DawPreferences? = null
 ) : ViewModel() {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
     
     private val _barPosition = MutableStateFlow(1)
     val barPosition: StateFlow<Int> = _barPosition.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(ViewMode.VERTICAL)
+    /** Current timeline scroll axis; toggled via [toggleViewMode] and persisted via [DawPreferences]. */
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
     
     private val _sections = MutableStateFlow(listOf(
         SectionInfo("intro", "Intro", barCount = 4),
@@ -156,6 +172,36 @@ class DawViewModel(
     init {
         startMeterLoop()
         refreshArchiveEntries()
+        restoreViewMode()
+    }
+
+    /** Loads the persisted view mode from [preferences], if any was saved and a store is wired up. */
+    private fun restoreViewMode() {
+        val prefs = preferences ?: return
+        viewModelScope.launch {
+            prefs.viewModeFlow.collect { savedName ->
+                val restored = savedName?.let { name ->
+                    runCatching { ViewMode.valueOf(name) }.getOrNull()
+                }
+                if (restored != null) {
+                    _viewMode.value = restored
+                }
+            }
+        }
+    }
+
+    /**
+     * Flips between [ViewMode.VERTICAL] and [ViewMode.HORIZONTAL] for the main DAW timeline,
+     * persisting the choice via [preferences] (when wired up) so it survives app restarts.
+     */
+    fun toggleViewMode() {
+        val newMode = if (_viewMode.value == ViewMode.VERTICAL) ViewMode.HORIZONTAL else ViewMode.VERTICAL
+        _viewMode.value = newMode
+        preferences?.let { prefs ->
+            viewModelScope.launch(Dispatchers.IO) {
+                prefs.setViewMode(newMode.name)
+            }
+        }
     }
 
     /** Reloads [archiveEntries] from [repository]. Safe no-op if no repository is wired up. */
