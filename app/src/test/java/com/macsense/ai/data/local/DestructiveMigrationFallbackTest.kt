@@ -23,7 +23,18 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class DestructiveMigrationFallbackTest {
 
-    @Database(entities = [ProjectEntity::class], version = 99, exportSchema = false)
+    @Database(
+        entities = [
+            ProjectEntity::class,
+            SectionEntity::class,
+            SoundGenomeEntity::class,
+            VersionNodeEntity::class,
+            SoundArchiveEntryEntity::class,
+            ClipEntity::class
+        ],
+        version = 99,
+        exportSchema = false
+    )
     @TypeConverters(Converters::class)
     abstract class FutureVersionDatabaseNoFallback : androidx.room.RoomDatabase() {
         abstract fun dao(): MacSenseDao

@@ -39,7 +39,7 @@ Delivers the features that set Macsense-2 apart, gated on Phase 2's real audio e
 - [ ] Breeding UI (select two takes, choose inherited trait, preview, commit with lineage) and visual lineage graph. *(Backend logic for breeding/resurrection + persistence already exists in `DawViewModel`/`SoundBreeder`/`SoundLineage`; the dedicated UI screen is still open.)*
 - [ ] Resurrection ritual UI for dormant sounds via `findByTag`/`reborn()`; Ari extended to issue breeding commands directly. *(Ari command parsing/execution for `breed_sounds`/`resurrect_sound` already lands in `DawViewModel.applyAriCommand`; the ritual UI itself is still open.)*
 - [x] Full unit coverage for extraction accuracy, breeding correctness, archive transitions, and lineage integrity.
-- [ ] Intelligent mastering (causal detection, target profiles, Ari-driven mastering, A/B comparison).
+- [x] Intelligent mastering (causal detection, target profiles, Ari-driven mastering, A/B comparison).
 - [ ] Vocal Preset Scanner (Match Closely / Fit My Voice / Blend Styles), starting stock-plugin-only.
 - [ ] Expand Ari's command surface to genome-breeding and mastering-chain recommendations with a mandatory "diff and confirm" step before any command applies; regression suite against fixed prompt/response fixtures.
 
