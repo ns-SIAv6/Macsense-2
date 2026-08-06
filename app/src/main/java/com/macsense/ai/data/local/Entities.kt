@@ -91,3 +91,23 @@ data class ClipEntity(
     @ColumnInfo(name = "gain_db", defaultValue = "0.0") val gainDb: Float = 0f,
     @ColumnInfo(name = "muted", defaultValue = "0") val muted: Boolean = false
 )
+
+/**
+ * Durable autosave snapshot of the full in-memory DAW arrangement state (bpm + serialized
+ * section list, including lyrics/instrument-grid/effects) for one project. This is the Phase 2
+ * "add autosave and transaction-level undo/redo" work item in `PRODUCTION_HARDENING_PLAN.md`:
+ * [DawViewModel] debounces writes here after every mutation so a killed process or crash never
+ * loses more than a few seconds of work, and undo/redo itself is handled in-memory via
+ * `UndoRedoManager` (restoring from this table is a *recovery* path, not the undo stack itself).
+ *
+ * Single-row-per-project by using [projectId] as the primary key: a new autosave always replaces
+ * the previous one rather than accumulating history, since transaction-level undo/redo already
+ * covers step-by-step history within a live session.
+ */
+@Entity(tableName = "project_snapshots")
+data class ProjectSnapshotEntity(
+    @PrimaryKey @ColumnInfo(name = "project_id") val projectId: String,
+    @ColumnInfo(name = "bpm") val bpm: Double,
+    @ColumnInfo(name = "sections_json") val sectionsJson: String,
+    @ColumnInfo(name = "saved_at") val savedAt: Long
+)
