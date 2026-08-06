@@ -24,8 +24,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
 /**
  * End-to-end tests for the Phase 5 sound-genetics Ari commands (`breed_sounds` /
@@ -37,7 +35,6 @@ import org.robolectric.RobolectricTestRunner
  * [UnconfinedTestDispatcher] so `viewModelScope.launch(Dispatchers.IO/Main)` coroutines
  * inside [DawViewModel] run synchronously within each test.
  */
-@RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class DawViewModelGeneticsPersistenceTest {
 
@@ -134,14 +131,7 @@ class DawViewModelGeneticsPersistenceTest {
         )
         vm.applyAriCommand(cmd)
 
-        var bred = vm.lastBredEntry.value
-        var attempts = 0
-        while (bred == null && attempts < 100) {
-            kotlinx.coroutines.delay(10)
-            bred = vm.lastBredEntry.value
-            attempts++
-        }
-
+        val bred = vm.lastBredEntry.value
         assertNotNull("lastBredEntry should be set after a successful breed_sounds command", bred)
         assertEquals(SoundArchive.State.REBORN, bred?.state)
 
@@ -168,14 +158,7 @@ class DawViewModelGeneticsPersistenceTest {
         )
         vm.applyAriCommand(cmd)
 
-        var resurrected = vm.lastResurrectedEntry.value
-        var attempts = 0
-        while (resurrected == null && attempts < 100) {
-            kotlinx.coroutines.delay(10)
-            resurrected = vm.lastResurrectedEntry.value
-            attempts++
-        }
-
+        val resurrected = vm.lastResurrectedEntry.value
         assertNotNull("lastResurrectedEntry should be set after a successful resurrect_sound command", resurrected)
         assertEquals(SoundArchive.State.REBORN, resurrected?.state)
         assertEquals("dormant1", resurrected?.originTakeId)

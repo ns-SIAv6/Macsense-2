@@ -5,37 +5,14 @@ import com.macsense.ai.data.local.ProjectEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
 import com.macsense.ai.data.local.SoundGenomeEntity
 import com.macsense.ai.data.repository.MacSenseRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.test.resetMain
-import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
-import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
-@OptIn(ExperimentalCoroutinesApi::class)
 class DawViewModelFactoryTest {
-
-    private val dispatcher = UnconfinedTestDispatcher()
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(dispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
 
     private class NoOpDao : MacSenseDao {
         private val archiveFlow = MutableStateFlow<List<SoundArchiveEntryEntity>>(emptyList())

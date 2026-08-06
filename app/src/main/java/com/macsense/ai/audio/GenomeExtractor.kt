@@ -42,14 +42,12 @@ object GenomeExtractor {
         } else samples
 
         val onsets = OnsetDetector.detectOnsets(normalized, sampleRate)
-        val transientRaw = estimateTransient(normalized, sampleRate, onsets)
+        val transient = estimateTransient(normalized, sampleRate, onsets)
 
         val pitch = PitchDetector.detect(normalized, sampleRate)
         val spectrum = SpectrumAnalyzer.analyze(normalized, sampleRate)
         val harmonicity = estimateHarmonicity(pitch?.confidence ?: 0.0, spectrum.flatness)
         val brightness = estimateBrightness(spectrum.centroid, spectrum.rolloff, sampleRate)
-
-        val transient = (transientRaw * (1.0 - 0.5 * harmonicity)).coerceIn(0.0, 1.0)
 
         val dynamicsResult = DynamicsAnalyzer.analyze(normalized)
         val dynamics = estimateDynamics(dynamicsResult.crestFactorDb)
