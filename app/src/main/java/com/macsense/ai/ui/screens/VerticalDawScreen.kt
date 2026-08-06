@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -31,7 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -41,12 +42,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.macsense.ai.ui.viewmodel.DawViewModel
 import com.macsense.ai.ui.viewmodel.SectionInfo
+import com.macsense.ai.ui.viewmodel.ViewMode
 import kotlin.math.sin
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
-// Colors
 val BackgroundDark = Color(0xFF0A0A12)
 val SurfaceDark = Color(0xFF141424)
 val SurfaceSubtle = Color(0xFF1E1E34)
@@ -57,11 +58,6 @@ val GreenActive = Color(0xFF10B981)
 val TextPrimary = Color(0xFFF3F4F6)
 val TextSecondary = Color(0xFF9CA3AF)
 
-/**
- * Displays the main vertical digital audio workstation interface.
- *
- * @param viewModel The view model providing playback, timeline, section, and audio visualization state.
- */
 @Composable
 fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -72,6 +68,7 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
     val meterL by viewModel.meterL.collectAsState()
     val meterR by viewModel.meterR.collectAsState()
     val spectrum by viewModel.spectrumData.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
 
     var isLeftRailExpanded by remember { mutableStateOf(true) }
     var isRightToolsExpanded by remember { mutableStateOf(true) }
@@ -86,11 +83,9 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
             .testTag("vertical_daw_screen")
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Global Mode Tabs Bar
             GlobalModesRow(selectedMode = globalMode, onModeSelect = { globalMode = it })
 
             Row(modifier = Modifier.weight(1f)) {
-                // Collapsible Left Rail
                 if (isLeftRailExpanded) {
                     Row(modifier = Modifier.fillMaxHeight()) {
                         LeftRailContent(
@@ -119,7 +114,6 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                     }
                 }
 
-                // Middle Main Section: Vertical Stacked Timeline
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -127,55 +121,79 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                         .padding(16.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Section Header Stats Panel
-                        HeaderStatsRow(bpm, timecode, barPosition)
+                        HeaderStatsRow(bpm, timecode, barPosition, viewMode)
 
-                        // Vertical Timeline Scrolling Cards
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .border(BorderStroke(1.dp, Color(0x1FA855F7)), RoundedCornerShape(12.dp))
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            itemsIndexed(sections, key = { _, section -> section.id }) { index, section ->
-                                SectionCard(
-                                    section = section,
-                                    isPlayingNow = isPlaying && (barPosition % sections.size == index),
-                                    onToggleExpand = { viewModel.toggleSectionExpanded(section.id) },
-                                    onReorderUp = { if (index > 0) viewModel.reorderSection(index, index - 1) },
-                                    onReorderDown = { if (index < sections.size - 1) viewModel.reorderSection(index, index + 1) },
-                                    onLyricsChange = { viewModel.updateSectionLyrics(section.id, it) },
-                                    onStepToggle = { lane, step ->
-                                        val currentVal = section.instrumentGrid[lane]?.get(step) ?: false
-                                        viewModel.updateInstrumentStep(section.id, lane, step, !currentVal)
-                                    },
-                                    onReverbChange = { viewModel.updateSectionReverb(section.id, it) },
-                                    onDelayChange = { viewModel.updateSectionDelay(section.id, it) },
-                                    onFilterChange = { viewModel.updateSectionFilter(section.id, it) },
-                                    onVolumeChange = { viewModel.updateSectionVolume(section.id, it) }
-                                )
+                        if (viewMode == ViewMode.VERTICAL) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .border(BorderStroke(1.dp, Color(0x1FA855F7)), RoundedCornerShape(12.dp))
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                itemsIndexed(sections, key = { _, section -> section.id }) { index, section ->
+                                    SectionCard(
+                                        section = section,
+                                        isPlayingNow = isPlaying && index == ((barPosition - 1).mod(sections.size.coerceAtLeast(1))),
+                                        isCompact = false,
+                                        onToggleExpand = { viewModel.toggleSectionExpanded(section.id) },
+                                        onReorderUp = { if (index > 0) viewModel.reorderSection(index, index - 1) },
+                                        onReorderDown = { if (index < sections.size - 1) viewModel.reorderSection(index, index + 1) },
+                                        onLyricsChange = { viewModel.updateSectionLyrics(section.id, it) },
+                                        onStepToggle = { lane, step ->
+                                            val currentVal = section.instrumentGrid[lane]?.get(step) ?: false
+                                            viewModel.updateInstrumentStep(section.id, lane, step, !currentVal)
+                                        },
+                                        onReverbChange = { viewModel.updateSectionReverb(section.id, it) },
+                                        onDelayChange = { viewModel.updateSectionDelay(section.id, it) },
+                                        onFilterChange = { viewModel.updateSectionFilter(section.id, it) },
+                                        onVolumeChange = { viewModel.updateSectionVolume(section.id, it) }
+                                    )
+                                }
                             }
+                        } else {
+                            HorizontalArrangementTimeline(
+                                sections = sections,
+                                isPlaying = isPlaying,
+                                barPosition = barPosition,
+                                onToggleExpand = { viewModel.toggleSectionExpanded(it) },
+                                onReorderUp = { index -> if (index > 0) viewModel.reorderSection(index, index - 1) },
+                                onReorderDown = { index -> if (index < sections.size - 1) viewModel.reorderSection(index, index + 1) },
+                                onLyricsChange = { id, text -> viewModel.updateSectionLyrics(id, text) },
+                                onStepToggle = { sectionId, lane, step, current -> viewModel.updateInstrumentStep(sectionId, lane, step, !current) },
+                                onReverbChange = { id, value -> viewModel.updateSectionReverb(id, value) },
+                                onDelayChange = { id, value -> viewModel.updateSectionDelay(id, value) },
+                                onFilterChange = { id, value -> viewModel.updateSectionFilter(id, value) },
+                                onVolumeChange = { id, value -> viewModel.updateSectionVolume(id, value) }
+                            )
                         }
 
-                        // Bottom Instrument Map Legend
                         InstrumentMapLegend()
                     }
 
-                    // Fixed Centered Playhead Line Overlay
                     if (isPlaying) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(2.dp)
-                                .align(Alignment.Center)
-                                .background(Brush.horizontalGradient(listOf(Color.Transparent, CyanNeon, Color.Transparent)))
-                        )
+                        if (viewMode == ViewMode.VERTICAL) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .align(Alignment.Center)
+                                    .background(Brush.horizontalGradient(listOf(Color.Transparent, CyanNeon, Color.Transparent)))
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .fillMaxHeight()
+                                    .padding(vertical = 72.dp)
+                                    .align(Alignment.CenterStart)
+                                    .background(Brush.verticalGradient(listOf(Color.Transparent, CyanNeon, Color.Transparent)))
+                            )
+                        }
                     }
                 }
 
-                // Collapsible Extra Tools Sidebar (Right)
                 if (isRightToolsExpanded) {
                     Row(modifier = Modifier.fillMaxHeight()) {
                         VerticalDivider(
@@ -206,7 +224,6 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                 }
             }
 
-            // Bottom Transport Bar
             TransportBar(
                 isPlaying = isPlaying,
                 onPlayPause = { viewModel.togglePlayPause() },
@@ -216,7 +233,56 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                 barPosition = barPosition,
                 meterL = meterL,
                 meterR = meterR,
-                spectrum = spectrum
+                spectrum = spectrum,
+                viewMode = viewMode,
+                onToggleViewMode = { viewModel.toggleViewMode() }
+            )
+        }
+    }
+}
+
+@Composable
+fun HorizontalArrangementTimeline(
+    sections: List<SectionInfo>,
+    isPlaying: Boolean,
+    barPosition: Int,
+    onToggleExpand: (String) -> Unit,
+    onReorderUp: (Int) -> Unit,
+    onReorderDown: (Int) -> Unit,
+    onLyricsChange: (String, String) -> Unit,
+    onStepToggle: (String, String, Int, Boolean) -> Unit,
+    onReverbChange: (String, Float) -> Unit,
+    onDelayChange: (String, Float) -> Unit,
+    onFilterChange: (String, Float) -> Unit,
+    onVolumeChange: (String, Float) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, Color(0x1FA855F7)), RoundedCornerShape(12.dp))
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(end = 64.dp)
+    ) {
+        itemsIndexed(sections, key = { _, section -> section.id }) { index, section ->
+            SectionCard(
+                section = section,
+                isPlayingNow = isPlaying && index == ((barPosition - 1).mod(sections.size.coerceAtLeast(1))),
+                isCompact = !section.isExpanded,
+                modifier = Modifier.width(if (section.isExpanded) 420.dp else 220.dp),
+                onToggleExpand = { onToggleExpand(section.id) },
+                onReorderUp = { onReorderUp(index) },
+                onReorderDown = { onReorderDown(index) },
+                onLyricsChange = { onLyricsChange(section.id, it) },
+                onStepToggle = { lane, step ->
+                    val currentVal = section.instrumentGrid[lane]?.get(step) ?: false
+                    onStepToggle(section.id, lane, step, currentVal)
+                },
+                onReverbChange = { onReverbChange(section.id, it) },
+                onDelayChange = { onDelayChange(section.id, it) },
+                onFilterChange = { onFilterChange(section.id, it) },
+                onVolumeChange = { onVolumeChange(section.id, it) }
             )
         }
     }
@@ -278,19 +344,13 @@ fun GlobalModesRow(selectedMode: String, onModeSelect: (String) -> Unit) {
     }
 }
 
-/**
- * Displays the studio navigation rail with menu items and a draggable width.
- *
- * @param width The current width of the navigation rail.
- * @param onCollapse Called when the rail collapse control is selected.
- * @param onWidthChange Called with the updated width after the rail is resized.
- */
 @Composable
 fun LeftRailContent(
     width: androidx.compose.ui.unit.Dp,
     onCollapse: () -> Unit,
     onWidthChange: (androidx.compose.ui.unit.Dp) -> Unit
 ) {
+    val density = LocalDensity.current
     val menuItems = listOf(
         "New Project" to Icons.Default.Add,
         "Projects" to Icons.Default.List,
@@ -310,10 +370,11 @@ fun LeftRailContent(
             .width(width)
             .fillMaxHeight()
             .background(SurfaceDark)
-            .pointerInput(Unit) {
+            .pointerInput(width) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    val newWidth = (width + dragAmount.x.toDp()).coerceIn(160.dp, 360.dp)
+                    val currentWidthPx = with(density) { width.toPx() }
+                    val newWidth = with(density) { (currentWidthPx + dragAmount.x).toDp() }.coerceIn(160.dp, 360.dp)
                     onWidthChange(newWidth)
                 }
             }
@@ -353,7 +414,7 @@ fun LeftRailContent(
 }
 
 @Composable
-fun HeaderStatsRow(bpm: Double, timecode: String, barPosition: Int) {
+fun HeaderStatsRow(bpm: Double, timecode: String, barPosition: Int, viewMode: ViewMode) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -362,7 +423,7 @@ fun HeaderStatsRow(bpm: Double, timecode: String, barPosition: Int) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "VERTICAL TIMELINE",
+            text = if (viewMode == ViewMode.VERTICAL) "VERTICAL TIMELINE" else "HORIZONTAL ARRANGEMENT",
             color = TextSecondary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
@@ -373,6 +434,7 @@ fun HeaderStatsRow(bpm: Double, timecode: String, barPosition: Int) {
             HeaderStatBox("TEMPO", String.format("%.1f BPM", bpm), CyanNeon)
             HeaderStatBox("TIMECODE", timecode, MagentaNeon)
             HeaderStatBox("BAR", barPosition.toString(), PurpleNeon)
+            HeaderStatBox("VIEW", if (viewMode == ViewMode.VERTICAL) "VERT" else "HORIZ", GreenActive)
         }
     }
 }
@@ -411,7 +473,9 @@ fun SectionCard(
     onReverbChange: (Float) -> Unit,
     onDelayChange: (Float) -> Unit,
     onFilterChange: (Float) -> Unit,
-    onVolumeChange: (Float) -> Unit
+    onVolumeChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "Active Glow")
     val alphaGlow by infiniteTransition.animateFloat(
@@ -430,7 +494,7 @@ fun SectionCard(
     }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable { onToggleExpand() }
             .shadow(if (isPlayingNow) 12.dp else 2.dp, RoundedCornerShape(16.dp)),
@@ -439,7 +503,6 @@ fun SectionCard(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -453,7 +516,18 @@ fun SectionCard(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(section.name, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Column {
+                        Text(section.name, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        if (isCompact) {
+                            Text(
+                                text = compactSectionSummary(section),
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 2
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         "${section.barCount} Bars",
@@ -473,15 +547,18 @@ fun SectionCard(
                 }
             }
 
+            if (isCompact) {
+                Spacer(modifier = Modifier.height(10.dp))
+                CompactWaveformStrip(isPlayingNow = isPlayingNow)
+            }
+
             AnimatedVisibility(visible = section.isExpanded) {
                 Column(modifier = Modifier.padding(top = 16.dp)) {
-                    // Custom Glowing Waveform
                     Text("WAVEFORM MONITOR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     NeonWaveform(isPlayingNow)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Lyrics Studio Inline
                     Text("LYRICS studio", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     OutlinedTextField(
                         value = section.lyrics,
@@ -502,14 +579,12 @@ fun SectionCard(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Interactive Instrument Grid
                     Text("INSTRUMENT SEQUENCE MAP", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
                     InstrumentGrid(section.instrumentGrid, onStepToggle)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Automation sliders
                     Text("EFFECTS & AUTOMATION LANES", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     AutomationSlider("Reverb", section.reverb, PurpleNeon, onReverbChange)
                     AutomationSlider("Delay", section.delay, MagentaNeon, onDelayChange)
@@ -518,6 +593,37 @@ fun SectionCard(
                 }
             }
         }
+    }
+}
+
+fun compactSectionSummary(section: SectionInfo): String {
+    val activeLanes = section.instrumentGrid.count { (_, steps) -> steps.any { it } }
+    val lyricPreview = section.lyrics.lineSequence().firstOrNull()?.take(28).orEmpty()
+    return "$activeLanes lanes active • ${lyricPreview.ifBlank { "No lyrics yet" }}"
+}
+
+@Composable
+fun CompactWaveformStrip(isPlayingNow: Boolean) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(BackgroundDark)
+            .border(BorderStroke(1.dp, Color(0x1FA855F7)), RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        val width = size.width
+        val height = size.height
+        val midY = height / 2f
+        val path = Path().apply { moveTo(0f, midY) }
+        for (x in 0..width.toInt() step 6) {
+            val ratio = x / width
+            val amplitude = if (isPlayingNow) 10f else 6f
+            val wave = sin(ratio * 18f * Math.PI.toFloat()).toFloat() * amplitude
+            path.lineTo(x.toFloat(), midY + wave)
+        }
+        drawPath(path = path, color = if (isPlayingNow) CyanNeon else PurpleNeon, style = Stroke(width = 2f))
     }
 }
 
@@ -545,7 +651,7 @@ fun NeonWaveform(isPlayingNow: Boolean) {
         val height = size.height
         val midY = height / 2f
         val path = Path()
-        
+
         path.moveTo(0f, midY)
         for (x in 0..width.toInt() step 5) {
             val ratio = x / width
@@ -557,7 +663,7 @@ fun NeonWaveform(isPlayingNow: Boolean) {
             }
             path.lineTo(x.toFloat(), midY + wave * envelope)
         }
-        
+
         drawPath(
             path = path,
             color = PurpleNeon,
@@ -697,23 +803,21 @@ fun RightToolsContent(
     onCollapse: () -> Unit,
     onWidthChange: (androidx.compose.ui.unit.Dp) -> Unit
 ) {
-    var activeTab by remember { mutableStateOf(0) } // 0: ARI AI, 1: AI STEMS, 2: CREATORS
+    val density = LocalDensity.current
+    var activeTab by remember { mutableStateOf(0) }
     val tabs = listOf("ARI AI", "AI STEMS", "CREATORS")
     val scope = rememberCoroutineScope()
 
-    // XP State
     val xpAmount by viewModel.xpAmount.collectAsState()
     val level = 4
     val nextLevelXp = 5000
     val progressXp = xpAmount.toFloat() / nextLevelXp
 
-    // Stem Separator States (Suno/Udio style)
     var selectedTake by remember { mutableStateOf("Lead Vocal Take") }
     val takesList = listOf("Lead Vocal Take", "Synth Doubles", "Adlib Track", "Room Acoustic Take")
     var isStemSplitting by remember { mutableStateOf(false) }
     var stemSplitComplete by remember { mutableStateOf(false) }
 
-    // Faders states
     var vocalVol by remember { mutableStateOf(0.8f) }
     var vocalMuted by remember { mutableStateOf(false) }
     var vocalSolo by remember { mutableStateOf(false) }
@@ -730,14 +834,12 @@ fun RightToolsContent(
     var melodyMuted by remember { mutableStateOf(false) }
     var melodySolo by remember { mutableStateOf(false) }
 
-    // Creative States
     var highBoost by remember { mutableStateOf(45f) }
     val sections by viewModel.sections.collectAsState()
     var selectedSectionId by remember { mutableStateOf(sections.firstOrNull()?.id ?: "intro") }
     var aiFeedbackTip by remember { mutableStateOf("Dynamics analysis: Verse-1 transitions sound clean. Try boosting hi-hat intensity.") }
     var isAnalyzingFeedback by remember { mutableStateOf(false) }
 
-    // Dropdown for Section/Take selection
     var isSectionDropdownExpanded by remember { mutableStateOf(false) }
     var isTakeDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -746,17 +848,17 @@ fun RightToolsContent(
             .width(width)
             .fillMaxHeight()
             .background(SurfaceDark)
-            .pointerInput(Unit) {
+            .pointerInput(width) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    val newWidth = (width - dragAmount.x.toDp()).coerceIn(240.dp, 400.dp)
+                    val currentWidthPx = with(density) { width.toPx() }
+                    val newWidth = with(density) { (currentWidthPx - dragAmount.x).toDp() }.coerceIn(240.dp, 400.dp)
                     onWidthChange(newWidth)
                 }
             }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -768,7 +870,6 @@ fun RightToolsContent(
             }
         }
 
-        // Tab Selector
         TabRow(
             selectedTabIndex = activeTab,
             containerColor = SurfaceSubtle,
@@ -793,13 +894,9 @@ fun RightToolsContent(
         Spacer(modifier = Modifier.height(4.dp))
 
         if (activeTab == 0) {
-            // --- ARI AI INTERACTIVE STUDIO PARTNER ---
             AriAiChatView(viewModel)
         } else if (activeTab == 1) {
-            // SUNO / UDIO STYLE STEM SPLITTER
             Text("AI MULTI-TRACK STEM SEPARATOR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            
-            // Dropdown selection of takes
             Box(modifier = Modifier.fillMaxWidth()) {
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { isTakeDropdownExpanded = true },
@@ -837,10 +934,10 @@ fun RightToolsContent(
                     isStemSplitting = true
                     stemSplitComplete = false
                     scope.launch {
-                        delay(1200) // realistic splitting processing
+                        delay(1200)
                         isStemSplitting = false
                         stemSplitComplete = true
-                        viewModel.addXp(350) // award split XP!
+                        viewModel.addXp(350)
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(42.dp).testTag("stem_split_button"),
@@ -861,8 +958,6 @@ fun RightToolsContent(
             }
 
             Spacer(modifier = Modifier.height(4.dp))
-
-            // Stem faders deck
             Text("STEM MIXING DESK", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
 
             if (!stemSplitComplete && !isStemSplitting) {
@@ -897,9 +992,6 @@ fun RightToolsContent(
                 }
             }
         } else {
-            // CREATIVE COMPILATION & TEMPLATE GENERATORS
-            
-            // LEVEL TRACKER CARD
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
@@ -916,7 +1008,7 @@ fun RightToolsContent(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     LinearProgressIndicator(
-                        progress = progressXp.coerceIn(0f, 1f),
+                        progress = { progressXp.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                         color = MagentaNeon,
                         trackColor = BackgroundDark
@@ -924,7 +1016,6 @@ fun RightToolsContent(
                 }
             }
 
-            // TRANSIST BOOSTER
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
@@ -947,7 +1038,6 @@ fun RightToolsContent(
                 }
             }
 
-            // SIGNATURE BAR BANK (INJECTION SYSTEM)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
@@ -956,8 +1046,6 @@ fun RightToolsContent(
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("SIGNATURE BAR BANK", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text("Auto-inject sequenced drum blueprints into the active section.", color = TextSecondary, fontSize = 10.sp)
-                    
-                    // Select Target Section Dropdown
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Card(
                             modifier = Modifier.fillMaxWidth().clickable { isSectionDropdownExpanded = true },
@@ -991,7 +1079,6 @@ fun RightToolsContent(
                         }
                     }
 
-                    // Preset Buttons
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("Trap 16ths", "BoomBap Swing", "Synthwave 8ths", "Reggaeton 3-2").chunked(2).forEach { rowPresets ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1017,7 +1104,6 @@ fun RightToolsContent(
                 }
             }
 
-            // REAL-TIME AI CRITIQUE ENGINE
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceSubtle),
@@ -1036,8 +1122,7 @@ fun RightToolsContent(
                                 scope.launch {
                                     delay(600)
                                     val sectionName = sections.firstOrNull { it.id == selectedSectionId }?.name ?: "Active section"
-                                    aiFeedbackTip = "Feedback for $sectionName at ${viewModel.bpm.value} BPM:\n" +
-                                            "Excellent transient drive. We advise dropping snare volume by 1.5dB to optimize high-mids."
+                                    aiFeedbackTip = "Feedback for $sectionName at ${viewModel.bpm.value} BPM:\nExcellent transient drive. We advise dropping snare volume by 1.5dB to optimize high-mids."
                                     isAnalyzingFeedback = false
                                     viewModel.addXp(80)
                                 }
@@ -1091,9 +1176,8 @@ fun StemFaderRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(label, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                
+
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // Mute Button
                     Box(
                         modifier = Modifier
                             .size(26.dp)
@@ -1104,7 +1188,6 @@ fun StemFaderRow(
                     ) {
                         Text("M", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
-                    // Solo Button
                     Box(
                         modifier = Modifier
                             .size(26.dp)
@@ -1128,7 +1211,6 @@ fun StemFaderRow(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Small bouncing visual meter bar
                 Box(
                     modifier = Modifier
                         .width(48.dp)
@@ -1158,7 +1240,9 @@ fun TransportBar(
     barPosition: Int,
     meterL: Float,
     meterR: Float,
-    spectrum: FloatArray
+    spectrum: FloatArray,
+    viewMode: ViewMode,
+    onToggleViewMode: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -1169,7 +1253,6 @@ fun TransportBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Controls left (prev / play / next)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = {}) {
                 Text("◀◀", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -1191,9 +1274,21 @@ fun TransportBar(
             IconButton(onClick = {}) {
                 Text("▶▶", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
+            Spacer(modifier = Modifier.width(12.dp))
+            OutlinedButton(
+                onClick = onToggleViewMode,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanNeon),
+                border = BorderStroke(1.dp, CyanNeon.copy(alpha = 0.5f))
+            ) {
+                Text(
+                    text = if (viewMode == ViewMode.VERTICAL) "SWITCH TO HORIZONTAL" else "SWITCH TO VERTICAL",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
 
-        // Mid - BPM, bar count, timecode
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(24.dp)
@@ -1240,13 +1335,11 @@ fun TransportBar(
             }
         }
 
-        // Stereo meter and Live spectrum analyzer drawings
         Row(
             modifier = Modifier.width(220.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Live spectrum analyzer drawing using canvas
             Canvas(
                 modifier = Modifier
                     .weight(1f)
@@ -1256,7 +1349,7 @@ fun TransportBar(
             ) {
                 val barWidth = size.width / spectrum.size
                 spectrum.forEachIndexed { i, value ->
-                    val heightRatio = (value + 80f) / 80f // 0 to 1 range
+                    val heightRatio = (value + 80f) / 80f
                     val barHeight = size.height * heightRatio.coerceIn(0f, 1f)
                     drawRect(
                         color = PurpleNeon.copy(alpha = 0.8f),
@@ -1266,7 +1359,6 @@ fun TransportBar(
                 }
             }
 
-            // Stereo Meters
             Column(modifier = Modifier.width(60.dp)) {
                 MeterBar("L", meterL)
                 Spacer(modifier = Modifier.height(4.dp))
@@ -1306,9 +1398,7 @@ fun AriAiChatView(viewModel: DawViewModel) {
     val isTyping by viewModel.isAriTyping.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
-    // Scroll to bottom when new messages arrive
     LaunchedEffect(chatLog.size, isTyping) {
         if (chatLog.isNotEmpty()) {
             listState.animateScrollToItem(chatLog.size - 1)
@@ -1321,7 +1411,6 @@ fun AriAiChatView(viewModel: DawViewModel) {
             .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Chat Bubbles area
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -1338,7 +1427,6 @@ fun AriAiChatView(viewModel: DawViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = if (msg.role == "user") Alignment.End else Alignment.Start
                 ) {
-                    // Chat Bubble
                     Box(
                         modifier = Modifier
                             .clip(
@@ -1372,7 +1460,6 @@ fun AriAiChatView(viewModel: DawViewModel) {
                         )
                     }
 
-                    // Special Directive Card (if pending command exists)
                     msg.pendingCommand?.let { cmd ->
                         Spacer(modifier = Modifier.height(6.dp))
                         Card(
@@ -1464,7 +1551,6 @@ fun AriAiChatView(viewModel: DawViewModel) {
             }
         }
 
-        // Fast Action chips
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1497,7 +1583,6 @@ fun AriAiChatView(viewModel: DawViewModel) {
             }
         }
 
-        // Input Field Area
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
