@@ -2,6 +2,7 @@ package com.macsense.ai.repository
 
 import com.macsense.ai.audio.SoundArchive
 import com.macsense.ai.audio.SoundGenome
+import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
@@ -24,7 +25,9 @@ class MacSenseRepositoryTest {
         val projects = mutableListOf<ProjectEntity>()
         val archiveEntries = mutableListOf<SoundArchiveEntryEntity>()
         val genomes = mutableListOf<SoundGenomeEntity>()
+        val clips = mutableListOf<ClipEntity>()
         private val archiveFlow = MutableStateFlow<List<SoundArchiveEntryEntity>>(emptyList())
+        private val clipsFlow = MutableStateFlow<List<ClipEntity>>(emptyList())
 
         override suspend fun insertProject(project: ProjectEntity) { projects.add(project) }
         override suspend fun getProjectById(id: String) = projects.find { it.id == id }
@@ -55,6 +58,29 @@ class MacSenseRepositoryTest {
         override suspend fun getSoundGenomeById(id: String) = genomes.find { it.id == id }
         override suspend fun getSoundGenomesForProject(projectId: String) =
             genomes.filter { it.projectId == projectId }
+
+        override suspend fun insertClip(clip: ClipEntity) {
+            clips.removeIf { it.id == clip.id }
+            clips.add(clip)
+            clipsFlow.value = clips.toList()
+        }
+
+        override suspend fun getClipsForSection(sectionId: String) =
+            clips.filter { it.sectionId == sectionId }.sortedBy { it.startFrame }
+
+        override fun observeClipsForSection(sectionId: String) = clipsFlow.asStateFlow()
+
+        override suspend fun getClipById(id: String) = clips.find { it.id == id }
+
+        override suspend fun deleteClip(id: String) {
+            clips.removeIf { it.id == id }
+            clipsFlow.value = clips.toList()
+        }
+
+        override suspend fun deleteClipsForSection(sectionId: String) {
+            clips.removeIf { it.sectionId == sectionId }
+            clipsFlow.value = clips.toList()
+        }
     }
 
     private lateinit var dao: FakeDao
@@ -152,5 +178,36 @@ class MacSenseRepositoryTest {
         val proj1Genomes = repo.getSoundGenomesForProject("proj1")
         assertEquals(2, proj1Genomes.size)
         assertTrue(proj1Genomes.all { it.sourceId in setOf("g1", "g2") })
+    }
+
+    @Test
+    fun upsertAndGetClipsForSection_roundTripsInStartFrameOrder() = runBlocking {
+        val clipA = ClipEntity(
+            id = "clipA", sectionId = "verse1", lane = "Kick", takeId = "take1",
+            startFrame = 44_100L, trimEndFrame = null
+        )
+        val clipB = ClipEntity(
+            id = "clipB", sectionId = "verse1", lane = "Snare", takeId = "take2",
+            startFrame = 0L, trimEndFrame = 22_050L
+        )
+
+        repo.upsertClip(clipA)
+        repo.upsertClip(clipB)
+
+        val clips = repo.getClipsForSection("verse1")
+        assertEquals(2, clips.size)
+        assertEquals("clipB", clips.first().id) // startFrame 0 sorts before 44_100
+        assertEquals("clipA", clips.last().id)
+    }
+
+    @Test
+    fun deleteClipsForSection_removesOnlyThatSectionsClips() = runBlocking {
+        repo.upsertClip(ClipEntity(id = "c1", sectionId = "verse1", lane = "Kick", takeId = "t1", startFrame = 0L, trimEndFrame = null))
+        repo.upsertClip(ClipEntity(id = "c2", sectionId = "hook", lane = "Kick", takeId = "t2", startFrame = 0L, trimEndFrame = null))
+
+        repo.deleteClipsForSection("verse1")
+
+        assertTrue(repo.getClipsForSection("verse1").isEmpty())
+        assertEquals(1, repo.getClipsForSection("hook").size)
     }
 }
