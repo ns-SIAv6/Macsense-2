@@ -53,4 +53,28 @@ object Migrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_take_id` ON `clips` (`take_id`)")
         }
     }
+
+    /**
+     * Extends `sections` with every field `DawViewModel.SectionInfo` carries in memory
+     * (`bar_count`, `is_expanded`, `lyrics`, `instrument_grid_json`, and the four effect knobs),
+     * plus renames the legacy camelCase `projectId` column usage to the `project_id` column name
+     * used elsewhere in the schema (SQLite ALTER TABLE ADD COLUMN can't rename in place, so the
+     * pre-existing `projectId` column is left as-is/unused going forward and reads should prefer
+     * `project_id`). This closes the gap where a section's lyrics and step-sequencer programming
+     * were only ever held in an in-memory StateFlow and were lost on process death.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE sections ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default-project'")
+            db.execSQL("ALTER TABLE sections ADD COLUMN bar_count INTEGER NOT NULL DEFAULT 8")
+            db.execSQL("ALTER TABLE sections ADD COLUMN is_expanded INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE sections ADD COLUMN lyrics TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE sections ADD COLUMN instrument_grid_json TEXT NOT NULL DEFAULT '{}'")
+            db.execSQL("ALTER TABLE sections ADD COLUMN reverb REAL NOT NULL DEFAULT 0.25")
+            db.execSQL("ALTER TABLE sections ADD COLUMN delay REAL NOT NULL DEFAULT 0.15")
+            db.execSQL("ALTER TABLE sections ADD COLUMN filter REAL NOT NULL DEFAULT 0.85")
+            db.execSQL("ALTER TABLE sections ADD COLUMN volume REAL NOT NULL DEFAULT 0.75")
+            db.execSQL("UPDATE sections SET project_id = projectId WHERE projectId IS NOT NULL")
+        }
+    }
 }
