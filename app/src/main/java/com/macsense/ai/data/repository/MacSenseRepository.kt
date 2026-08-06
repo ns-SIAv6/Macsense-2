@@ -6,6 +6,7 @@ import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.Converters
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
+import com.macsense.ai.data.local.ProjectSnapshotEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
 import com.macsense.ai.data.local.SoundGenomeEntity
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +81,29 @@ class MacSenseRepository(private val dao: MacSenseDao) {
 
     suspend fun deleteClipsForSection(sectionId: String) {
         dao.deleteClipsForSection(sectionId)
+    }
+
+    /**
+     * Persists (replacing any prior snapshot for [projectId]) the current bpm + serialized
+     * section list as a recovery-oriented autosave. See [ProjectSnapshotEntity] kdoc: this is
+     * distinct from in-memory undo/redo, which never touches Room.
+     */
+    suspend fun saveProjectSnapshot(projectId: String, bpm: Double, sectionsJson: String, savedAt: Long) {
+        dao.insertProjectSnapshot(
+            ProjectSnapshotEntity(
+                projectId = projectId,
+                bpm = bpm,
+                sectionsJson = sectionsJson,
+                savedAt = savedAt
+            )
+        )
+    }
+
+    suspend fun getProjectSnapshot(projectId: String): ProjectSnapshotEntity? =
+        dao.getProjectSnapshot(projectId)
+
+    suspend fun deleteProjectSnapshot(projectId: String) {
+        dao.deleteProjectSnapshot(projectId)
     }
 
     private fun SoundArchiveEntryEntity.toDomain(): SoundArchive.Entry = SoundArchive.Entry(
