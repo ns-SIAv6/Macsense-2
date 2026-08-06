@@ -188,6 +188,85 @@ object LoudnessMeter {
     }
 
     fun loudnessRange(channels: Array<DoubleArray>, sampleRate: Int): Double {
-        return 0.0 // Stub for LRA
+        if (channels.isEmpty() || channels[0].isEmpty()) return 0.0
+        val numChannels = channels.size
+
+        val weights = DoubleArray(numChannels) { i ->
+            if (numChannels == 2) 1.0 else {
+                when (i) {
+                    0, 1, 2 -> 1.0 // L, R, C
+                    3, 4 -> 1.41   // Ls, Rs
+                    else -> 1.0
+                }
+            }
+        }
+
+        val filters = Array(numChannels) { KWeighting(sampleRate) }
+        val totalSamples = channels[0].size
+        val filtered = Array(numChannels) { DoubleArray(totalSamples) }
+        for (ch in 0 until numChannels) {
+            val f = filters[ch]
+            val src = channels[ch]
+            val dst = filtered[ch]
+            for (i in 0 until totalSamples) {
+                dst[i] = f.process(src[i])
+            }
+        }
+
+        val blockSize = (3.0 * sampleRate).toInt()
+        val stepSize = (0.1 * sampleRate).toInt()
+        val numBlocks = if (totalSamples >= blockSize) (totalSamples - blockSize) / stepSize + 1 else 0
+        if (numBlocks == 0) return 0.0
+
+        val blockLoudness = DoubleArray(numBlocks)
+        val validBlocks = mutableListOf<Double>()
+
+        // Compute loudness for each 3s block
+        for (b in 0 until numBlocks) {
+            val start = b * stepSize
+            var sumGZ = 0.0
+            for (ch in 0 until numChannels) {
+                var sumSq = 0.0
+                for (i in 0 until blockSize) {
+                    val s = filtered[ch][start + i]
+                    sumSq += s * s
+                }
+                val z = sumSq / blockSize
+                sumGZ += weights[ch] * z
+            }
+            if (sumGZ > 0.0) {
+                val l = -0.691 + 10.0 * Math.log10(sumGZ)
+                blockLoudness[b] = l
+                // Absolute gate of -70.0 LKFS
+                if (l >= -70.0) {
+                    validBlocks.add(l)
+                }
+            } else {
+                blockLoudness[b] = Double.NEGATIVE_INFINITY
+            }
+        }
+
+        if (validBlocks.isEmpty()) return 0.0
+
+        // Relative gate: compute average energy of blocks above absolute threshold
+        var sumSurvivingEnergy = 0.0
+        for (l in validBlocks) {
+            val energy = Math.pow(10.0, (l + 0.691) / 10.0)
+            sumSurvivingEnergy += energy
+        }
+        val avgEnergy = sumSurvivingEnergy / validBlocks.size
+        if (avgEnergy <= 0.0) return 0.0
+        val lRel = -0.691 + 10.0 * Math.log10(avgEnergy) - 20.0
+
+        val gatedLoudness = validBlocks.filter { it >= lRel }.sorted()
+        if (gatedLoudness.size < 2) return 0.0
+
+        // Percentile calculation (10th and 95th percentiles)
+        val n = gatedLoudness.size
+        val idx10 = (0.10 * (n - 1)).toInt()
+        val idx95 = (0.95 * (n - 1)).toInt()
+
+        val lra = gatedLoudness[idx95] - gatedLoudness[idx10]
+        return lra
     }
 }

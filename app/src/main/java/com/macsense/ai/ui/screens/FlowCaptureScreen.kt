@@ -63,9 +63,19 @@ fun FlowCaptureScreen(
     val performanceStyle by viewModel.performanceStyle.collectAsState()
     val autoAlignToBeat by viewModel.autoAlignEnabled.collectAsState()
     val context = LocalContext.current
-    val microphoneReady = ContextCompat.checkSelfPermission(
-        context, Manifest.permission.RECORD_AUDIO
-    ) == PackageManager.PERMISSION_GRANTED
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasMicPermission = isGranted
+    }
 
     val liveInputLevel = if (isRecording) {
         val infiniteTransition = rememberInfiniteTransition(label = "")
@@ -127,15 +137,26 @@ fun FlowCaptureScreen(
                         }
                         LiveCaptureWaveform(isRecording)
                         Button(
-                            onClick = { viewModel.toggleRecording() },
-                            enabled = microphoneReady || isRecording,
+                            onClick = {
+                                if (hasMicPermission) {
+                                    viewModel.toggleRecording()
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = if (isRecording) Color.Red else PurpleNeon),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth(0.8f).height(52.dp)
                         ) {
-                            Text(if (isRecording) "■  STOP CAPTURE" else "●  TAP TO CAPTURE FLOW", fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(
+                                if (isRecording) "■  STOP CAPTURE"
+                                else if (!hasMicPermission) "🎙  GRANT MIC PERMISSION"
+                                else "●  TAP TO CAPTURE FLOW",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         }
-                        if (!microphoneReady && !isRecording) {
+                        if (!hasMicPermission && !isRecording) {
                             Text("Microphone access is needed to capture audio.", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
                         }
                         if (autoBpm > 0.0) {

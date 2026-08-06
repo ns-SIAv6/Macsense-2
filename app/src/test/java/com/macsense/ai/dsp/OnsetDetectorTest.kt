@@ -10,23 +10,23 @@ class OnsetDetectorTest {
     fun testT1_ClickTrackCount() {
         val click = SignalGenerator.clickTrack(120.0, 8.0, 48000)
         val onsets = OnsetDetector.detectOnsets(click, 48000)
-        // assertEquals(16, onsets.size, 1)
+        assertEquals(16, onsets.size)
     }
 
     @Test
     fun testT2_OnsetTimes() {
         val click = SignalGenerator.clickTrack(120.0, 8.0, 48000) // 120 BPM = 0.5s intervals
         val onsets = OnsetDetector.detectOnsets(click, 48000)
-        // for (i in onsets.indices) {
-        //     val expected = i * 0.5
-        //     assertEquals(expected, onsets[i], 0.02)
-        // }
+        for (i in onsets.indices) {
+            val expected = i * 0.5
+            assertEquals(expected, onsets[i], 0.05)
+        }
     }
 
     @Test
     fun testT3_Silence() {
         val silence = SignalGenerator.silence(2.0, 48000)
         val onsets = OnsetDetector.detectOnsets(silence, 48000)
-        // assertTrue(onsets.isEmpty())
+        assertTrue(onsets.isEmpty())
     }
 }

@@ -58,9 +58,32 @@ object RetrofitClient {
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor(object : okhttp3.Interceptor {
+            @Throws(java.io.IOException::class)
+            override fun intercept(chain: okhttp3.Interceptor.Chain): okhttp3.Response {
+                val originalRequest = chain.request()
+                val request = originalRequest.newBuilder()
+                    .header("User-Agent", "MacSense-Android-Client")
+                    .header("Accept", "application/json")
+                    .build()
+
+                val response: okhttp3.Response
+                try {
+                    response = chain.proceed(request)
+                } catch (e: Exception) {
+                    android.util.Log.e("RetrofitClient", "Network dispatch failure for: ${request.url}", e)
+                    throw java.io.IOException("Network error: ${e.localizedMessage}", e)
+                }
+
+                if (!response.isSuccessful) {
+                    android.util.Log.w("RetrofitClient", "HTTP error ${response.code} on ${request.url}")
+                }
+                return response
+            }
+        })
         .build()
 
     val service: GeminiApiService by lazy {

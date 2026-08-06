@@ -12,6 +12,9 @@ object PitchDetector {
         minFreq: Double = 50.0,
         maxFreq: Double = 2000.0
     ): PitchResult? {
+        if (samples.isEmpty() || sampleRate <= 0 || minFreq <= 0.0 || maxFreq <= 0.0 || minFreq >= maxFreq) {
+            return null
+        }
         val minTau = (sampleRate / maxFreq).toInt().coerceAtLeast(2)
         val maxTau = (sampleRate / minFreq).toInt()
         val window = minOf(samples.size, maxTau * 4)

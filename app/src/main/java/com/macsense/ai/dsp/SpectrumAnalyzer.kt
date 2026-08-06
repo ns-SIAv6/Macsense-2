@@ -4,7 +4,7 @@ import kotlin.math.log10
 
 object SpectrumAnalyzer {
     fun analyze(samples: DoubleArray, sampleRate: Int): SpectrumData {
-        if (samples.isEmpty()) return SpectrumData(0.0, 0.0, 0.0, DoubleArray(0))
+        if (samples.isEmpty() || samples.size < 2 || sampleRate <= 0) return SpectrumData(0.0, 0.0, 0.0, DoubleArray(0))
         val n = Integer.highestOneBit(samples.size)
         val trimmed = DoubleArray(n) { i -> samples[i] }
         val window = WindowFunctions.hann(n)

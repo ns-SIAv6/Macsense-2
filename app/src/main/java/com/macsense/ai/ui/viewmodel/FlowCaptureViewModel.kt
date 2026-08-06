@@ -126,26 +126,65 @@ class FlowCaptureViewModel(private val context: Context) : ViewModel() {
     
 
     private fun persistTakes() {
-        val json = JSONArray().apply {
-            _recordedTakes.value.forEach { take ->
-                put(JSONObject().apply {
-                    put("id", take.id); put("duration", take.durationSeconds); put("bpm", take.autoBpm)
-                    put("cadence", take.cadenceStyle); put("performance", take.performanceStyle)
-                    put("quantize", take.quantizeFeel); put("aligned", take.isAligned)
-                })
+        try {
+            val json = JSONArray().apply {
+                _recordedTakes.value.forEach { take ->
+                    put(JSONObject().apply {
+                        put("id", take.id)
+                        put("duration", take.durationSeconds)
+                        put("bpm", take.autoBpm)
+                        put("cadence", take.cadenceStyle)
+                        put("performance", take.performanceStyle)
+                        put("quantize", take.quantizeFeel)
+                        put("aligned", take.isAligned)
+                    })
+                }
             }
+            takeStore.edit().putString("takes", json.toString()).apply()
+        } catch (e: Exception) {
+            // Robust logging of serialization failure
+            android.util.Log.e("FlowCaptureViewModel", "Failed to persist takes JSON", e)
         }
-        takeStore.edit().putString("takes", json.toString()).apply()
     }
 
-    private fun loadTakes(): List<RecordSession> = runCatching {
-        val json = JSONArray(takeStore.getString("takes", "[]"))
-        List(json.length()) { index ->
-            val take = json.getJSONObject(index)
-            RecordSession(take.getString("id"), take.getDouble("duration"), take.getDouble("bpm"),
-                take.getString("cadence"), take.getString("performance"), take.getString("quantize"), take.getBoolean("aligned"))
+    private fun loadTakes(): List<RecordSession> {
+        val list = mutableListOf<RecordSession>()
+        val savedStr = takeStore.getString("takes", "[]") ?: "[]"
+        try {
+            val jsonArray = JSONArray(savedStr)
+            for (i in 0 until jsonArray.length()) {
+                try {
+                    val take = jsonArray.getJSONObject(i)
+                    val id = take.optString("id", "")
+                    if (id.isEmpty()) continue // skip invalid records lacking an ID
+
+                    val duration = take.optDouble("duration", 0.0)
+                    val bpm = take.optDouble("bpm", 120.0)
+                    val cadence = take.optString("cadence", "Melodic Trap")
+                    val performance = take.optString("performance", "Laidback")
+                    val quantize = take.optString("quantize", "Groove Swing (16th)")
+                    val aligned = take.optBoolean("aligned", true)
+
+                    list.add(
+                        RecordSession(
+                            id = id,
+                            durationSeconds = duration,
+                            autoBpm = bpm,
+                            cadenceStyle = cadence,
+                            performanceStyle = performance,
+                            quantizeFeel = quantize,
+                            isAligned = aligned
+                        )
+                    )
+                } catch (entryEx: Exception) {
+                    android.util.Log.e("FlowCaptureViewModel", "Skipped corrupted entry at index $i", entryEx)
+                }
+            }
+        } catch (arrayEx: Exception) {
+            android.util.Log.e("FlowCaptureViewModel", "Failed to parse overall takes JSON array", arrayEx)
         }
-    }.getOrDefault(emptyList())
+        return list
+    }
 
     override fun onCleared() {
         super.onCleared()

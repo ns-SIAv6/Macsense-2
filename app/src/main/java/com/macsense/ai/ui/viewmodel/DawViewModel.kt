@@ -390,6 +390,7 @@ class DawViewModel : ViewModel() {
                         _isAriTyping.value = false
                     }
                 } catch (e: Exception) {
+                    android.util.Log.e("DawViewModel", "Ari cloud pipeline failed, falling back to local simulation", e)
                     // Fall back to offline model on any error
                     delay(1000)
                     val (reply, cmd) = generateOfflineAriResponse(userText)
