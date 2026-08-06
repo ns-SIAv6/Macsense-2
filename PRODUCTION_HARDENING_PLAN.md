@@ -20,7 +20,7 @@ Closes every CRITICAL/HIGH item from `PRODUCTION_GAP_ANALYSIS.md` before any new
 Replaces every simulated/placeholder subsystem with production audio infrastructure and builds the locked vertical-scroll DAW shell (issue #13, DAW Vision Spec build steps 1–3, issue #47).
 - [x] Replace the simulated FFT/meter loop with live AudioRecord/Oboe capture feeding `Fft`/`LoudnessMeter`/`TruePeakMeter`/`SpectrumAnalyzer`.
 - [x] Replace the `delay()`-based transport clock with a sample-accurate Oboe/AAudio clock. *(Note: `TransportClock` now does absolute-deadline drift correction on the Kotlin coroutine side; a true AAudio-callback-thread clock is still open — see Open Items below.)*
-- [ ] Extend Room to a full track/clip/region schema; add autosave and transaction-level undo/redo. *(In progress: `ClipEntity`/`MIGRATION_3_4` added this PR — a clip references a take id, section id ("track"), start/trim frames, gain, and mute state, with CASCADE delete tied to its section. Autosave and undo/redo are not yet built on top of it.)*
+- [ ] Extend Room to a full track/clip/region schema; add autosave and transaction-level undo/redo. *(In progress: the durable schema slice (`ClipEntity`/`MIGRATION_3_4`) is in `main`, and this PR wires those persisted clips into `DawViewModel` via `clipsBySection`, `upsertClip`, `deleteClip`, `clearSectionClips`, and startup refresh. Autosave and undo/redo are still open.)*
 - [ ] Full instrumented test pass on real device/emulator audio I/O.
 - [ ] Ship the vertical-scroll shell (fixed-center playhead, expandable Intro/Verse/Hook/Bridge/Outro section cards).
 - [ ] Ship the horizontal-toggle arrangement view re-projecting the same Section/Layer data model.
@@ -62,8 +62,8 @@ code. Corrected state as of this PR:
 - Phase 1: only crash reporting (needs a human vendor/DSN decision), branch protection (needs repo
   admin action), and staging secret-rotation validation (needs real staging creds) remain — tracked
   in issue #52. Everything else in Phase 1 is genuinely implemented and tested in code.
-- Phase 2: `ClipEntity`/`MIGRATION_3_4` (this PR) is the *first* slice of the track/clip/region
-  schema — it is deliberately scoped to durable clip placement (section, lane, take reference,
-  trim, gain, mute) and does not yet include autosave or undo/redo, which remain open.
+- Phase 2: the durable clip schema (`ClipEntity`/`MIGRATION_3_4`) is already in `main`, and this
+  PR adds the first ViewModel-level consumer path (`clipsBySection` + CRUD helpers + startup
+  refresh). Autosave, undo/redo, and arrangement UI are still open.
 - Phase 4: breeding/resurrection *logic* has existed and been tested for a while; the checkboxes
   above were split into logic-done vs. UI-still-open so the doc doesn't overstate completeness.
