@@ -21,6 +21,7 @@ import com.macsense.ai.audio.SoundBreeder
 import com.macsense.ai.audio.SoundGenome
 import com.macsense.ai.audio.SoundLineage
 import com.macsense.ai.audio.TransportClock
+import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.repository.MacSenseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,14 @@ class DawViewModel(
         SectionInfo("outro", "Outro", barCount = 4)
     ))
     val sections: StateFlow<List<SectionInfo>> = _sections.asStateFlow()
+
+    private val _clipsBySection = MutableStateFlow<Map<String, List<ClipEntity>>>(emptyMap())
+    /**
+     * Durable timeline clips keyed by section id. This is the first VM-level consumer of the
+     * Phase 2 `ClipEntity` schema: the UI can now observe actual persisted clip placements instead
+     * of only in-memory step-grid/lyrics metadata.
+     */
+    val clipsBySection: StateFlow<Map<String, List<ClipEntity>>> = _clipsBySection.asStateFlow()
     
     private val _bpm = MutableStateFlow(120.0)
     val bpm: StateFlow<Double> = _bpm.asStateFlow()
@@ -102,46 +111,32 @@ class DawViewModel(
     val spectrumData: StateFlow<FloatArray> = _spectrumData.asStateFlow()
 
     private val _hasLoadedTake = MutableStateFlow(false)
-    /** Whether a recorded take has been loaded into the native playback engine. */
     val hasLoadedTake: StateFlow<Boolean> = _hasLoadedTake.asStateFlow()
 
     private val _currentTakeId = MutableStateFlow<String?>(null)
-    /** Id of the take currently loaded into the native player, if any. */
     val currentTakeId: StateFlow<String?> = _currentTakeId.asStateFlow()
 
     private val _lastExtractedGenome = MutableStateFlow<SoundGenome?>(null)
-    /** Genome extracted from the most recently completed take, once extraction finishes. */
     val lastExtractedGenome: StateFlow<SoundGenome?> = _lastExtractedGenome.asStateFlow()
 
     private val _isExtractingGenome = MutableStateFlow(false)
-    /** True while [GenomeExtractor] is running and the archive entry is being persisted. */
     val isExtractingGenome: StateFlow<Boolean> = _isExtractingGenome.asStateFlow()
 
     private val _lastBredEntry = MutableStateFlow<SoundArchive.Entry?>(null)
-    /** Result of the most recent successful "breed_sounds" Ari command, if any. */
     val lastBredEntry: StateFlow<SoundArchive.Entry?> = _lastBredEntry.asStateFlow()
 
     private val _lastResurrectedEntry = MutableStateFlow<SoundArchive.Entry?>(null)
-    /** Result of the most recent successful "resurrect_sound" Ari command, if any. */
     val lastResurrectedEntry: StateFlow<SoundArchive.Entry?> = _lastResurrectedEntry.asStateFlow()
 
     private val _archiveEntries = MutableStateFlow<List<SoundArchive.Entry>>(emptyList())
-    /**
-     * Snapshot of every archived take known to [repository] (LIVING, DORMANT, and REBORN),
-     * refreshed after every breed/resurrect/genome-extraction operation. Empty and static when
-     * no repository is wired up. Backs the breeding screen's parent pickers and lineage view.
-     */
     val archiveEntries: StateFlow<List<SoundArchive.Entry>> = _archiveEntries.asStateFlow()
 
-    /** Ancestry graph over the current [archiveEntries] snapshot; see [SoundLineage]. */
     val soundLineage: SoundLineage
         get() = SoundLineage(_archiveEntries.value)
 
-    /** True only when the native lib linked and a take has actually been loaded into it. */
     val isNativePlaybackAvailable: Boolean
         get() = nativePlayback.isNativeAvailable && _hasLoadedTake.value
 
-    /** Real audio-thread-accurate playback position, distinct from the TransportClock's bar estimate. */
     val nativePlaybackPositionSeconds: Double
         get() = if (isNativePlaybackAvailable) nativePlayback.positionSeconds(takeSampleRate) else 0.0
 
@@ -156,9 +151,9 @@ class DawViewModel(
     init {
         startMeterLoop()
         refreshArchiveEntries()
+        refreshAllSectionClips()
     }
 
-    /** Reloads [archiveEntries] from [repository]. Safe no-op if no repository is wired up. */
     fun refreshArchiveEntries() {
         val repo = repository ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -167,17 +162,88 @@ class DawViewModel(
         }
     }
 
+    /** Reload every section's persisted clip list from Room. Safe no-op if no repository is wired. */
+    fun refreshAllSectionClips() {
+        val repo = repository ?: return
+        val sectionIds = _sections.value.map { it.id }
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = buildMap {
+                for (sectionId in sectionIds) {
+                    put(sectionId, repo.getClipsForSection(sectionId))
+                }
+            }
+            withContext(Dispatchers.Main) { _clipsBySection.value = snapshot }
+        }
+    }
+
+    /** Returns the latest in-memory clip snapshot for one section, ordered by start frame. */
+    fun clipsForSection(sectionId: String): List<ClipEntity> =
+        _clipsBySection.value[sectionId].orEmpty()
+
     /**
-     * Loads a recorded take (normalized mono Double PCM, e.g. from PcmFileStore) into the
-     * native low-latency playback engine so transport controls play real audio, not just
-     * the click/meter simulation. Safe to call even if the native lib failed to load; in
-     * that case this is a harmless no-op and [isNativePlaybackAvailable] stays false.
-     *
-     * Also kicks off the Phase 5 genetic-sound pipeline: on successful load, [GenomeExtractor]
-     * runs against the same samples off the main thread, and a LIVING [SoundArchive.Entry] is
-     * persisted through [repository] (when one was supplied) so the take becomes breedable,
-     * traceable in the lineage graph, and eligible for resurrection later.
+     * Persists a clip placement into Room, then refreshes the in-memory section snapshot. Intended
+     * as the first bridge from upcoming arrangement UI gestures into the durable clip schema.
      */
+    fun upsertClip(
+        sectionId: String,
+        lane: String,
+        takeId: String,
+        startFrame: Long,
+        trimStartFrame: Long = 0L,
+        trimEndFrame: Long? = null,
+        gainDb: Float = 0f,
+        muted: Boolean = false,
+        clipId: String = UUID.randomUUID().toString()
+    ) {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.upsertClip(
+                ClipEntity(
+                    id = clipId,
+                    sectionId = sectionId,
+                    lane = lane,
+                    takeId = takeId,
+                    startFrame = startFrame,
+                    trimStartFrame = trimStartFrame,
+                    trimEndFrame = trimEndFrame,
+                    gainDb = gainDb,
+                    muted = muted
+                )
+            )
+            val refreshed = repo.getClipsForSection(sectionId)
+            withContext(Dispatchers.Main) {
+                _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
+                    this[sectionId] = refreshed
+                }
+            }
+        }
+    }
+
+    fun deleteClip(clipId: String, sectionId: String) {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.deleteClip(clipId)
+            val refreshed = repo.getClipsForSection(sectionId)
+            withContext(Dispatchers.Main) {
+                _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
+                    this[sectionId] = refreshed
+                }
+            }
+        }
+    }
+
+    fun clearSectionClips(sectionId: String) {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.deleteClipsForSection(sectionId)
+            withContext(Dispatchers.Main) {
+                _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
+                    this[sectionId] = emptyList()
+                }
+            }
+        }
+    }
+
     fun loadTake(samples: DoubleArray, sampleRate: Int = AudioCapture.DEFAULT_SAMPLE_RATE, takeId: String = UUID.randomUUID().toString()) {
         takeSampleRate = sampleRate
         _hasLoadedTake.value = nativePlayback.load(samples, sampleRate)
@@ -188,12 +254,6 @@ class DawViewModel(
         extractAndArchiveGenome(takeId, samples, sampleRate)
     }
 
-    /**
-     * Runs [GenomeExtractor.extract] off the main thread and persists both the genome and a
-     * LIVING [SoundArchive.Entry] via [repository]. Safe no-op for genome persistence if no
-     * repository was injected (e.g. in lightweight unit tests); [lastExtractedGenome] is still
-     * updated so callers/tests can observe the extraction result either way.
-     */
     private fun extractAndArchiveGenome(takeId: String, samples: DoubleArray, sampleRate: Int) {
         viewModelScope.launch {
             _isExtractingGenome.value = true
@@ -227,13 +287,6 @@ class DawViewModel(
         }
     }
 
-    /**
-     * Breeds two archived takes' genomes via [SoundBreeder] and persists the offspring as a
-     * new REBORN [SoundArchive.Entry] whose origin points at [parentTakeId]. Requires
-     * [repository] to be wired up (both to look up the parent genomes and to persist the
-     * result); a no-op with a log line otherwise. Updates [lastBredEntry] on success so the
-     * UI (or Ari's chat reply) can reference the new take id.
-     */
     private fun breedSounds(parentTakeId: String, parentTakeId2: String, traitBias: Double, tags: Set<String>) {
         val repo = repository
         if (repo == null) {
@@ -272,19 +325,10 @@ class DawViewModel(
         }
     }
 
-    /**
-     * Public entry point for the breeding screen to trigger a breed directly (as opposed to via
-     * an Ari chat command). Mirrors the same persistence path as the `breed_sounds` Ari command.
-     */
     fun breedSoundsFromUi(parentTakeId: String, parentTakeId2: String, traitBias: Double = 0.5, tags: Set<String> = emptySet()) {
         breedSounds(parentTakeId, parentTakeId2, traitBias, tags)
     }
 
-    /**
-     * Resurrects a DORMANT (or any) archived take into a fresh REBORN entry sharing its genome,
-     * so a discarded take can re-enter active rotation without losing its lineage. Requires
-     * [repository]; a no-op with a log line otherwise. Updates [lastResurrectedEntry] on success.
-     */
     private fun resurrectSound(takeId: String, tags: Set<String>) {
         val repo = repository
         if (repo == null) {
@@ -319,11 +363,6 @@ class DawViewModel(
         }
     }
 
-    /**
-     * Public entry point for the breeding screen to trigger a resurrection directly (as opposed
-     * to via an Ari chat command). Mirrors the same persistence path as the `resurrect_sound`
-     * Ari command.
-     */
     fun resurrectSoundFromUi(takeId: String, tags: Set<String> = emptySet()) {
         resurrectSound(takeId, tags)
     }
@@ -361,14 +400,12 @@ class DawViewModel(
         }
     }
 
-    /** Stops native playback and rewinds it to frame 0, without affecting the transport clock's bar. */
     fun stopTakePlayback() {
         if (nativePlayback.isNativeAvailable) {
             nativePlayback.stop()
         }
     }
 
-    /** Seeks the loaded take to an absolute position in seconds. No-op if no take is loaded. */
     fun seekTakeTo(seconds: Double) {
         if (isNativePlaybackAvailable) {
             nativePlayback.seekToFrame((seconds * takeSampleRate).toLong())
@@ -392,6 +429,7 @@ class DawViewModel(
             val item = currentList.removeAt(fromIndex)
             currentList.add(toIndex, item)
             _sections.value = currentList
+            refreshAllSectionClips()
         }
     }
     
@@ -476,8 +514,6 @@ class DawViewModel(
                         _meterL.value = meterEngine.latestPeakDbL
                         _meterR.value = meterEngine.latestPeakDbR
                     } else {
-                        // No mic input available (permission denied, no device, headless test env):
-                        // decay toward silence rather than fabricating a signal.
                         _meterL.value = (_meterL.value - 2.0f).coerceAtLeast(-60f)
                         _meterR.value = (_meterR.value - 2.0f).coerceAtLeast(-60f)
                         val spec = _spectrumData.value.clone()
@@ -489,11 +525,11 @@ class DawViewModel(
                     _meterR.value = -60.0f
                     val spec = _spectrumData.value.clone()
                     for (i in spec.indices) {
-                        spec[i] = (spec[i] - 1.5f).coerceAtLeast(-80f) // Decaying spectrum
+                        spec[i] = (spec[i] - 1.5f).coerceAtLeast(-80f)
                     }
                     _spectrumData.value = spec
                 }
-                delay(50) // 20 FPS updates
+                delay(50)
             }
         }
     }
@@ -509,7 +545,6 @@ class DawViewModel(
         _sections.value = _sections.value.map { section ->
             if (section.id == sectionId) {
                 val newGrid = section.instrumentGrid.toMutableMap()
-                // Clear grid first
                 for (key in newGrid.keys) {
                     newGrid[key] = List(16) { false }
                 }
@@ -518,30 +553,30 @@ class DawViewModel(
                     "Trap 16ths" -> {
                         newGrid["Kick"] = List(16) { index -> index == 0 || index == 6 || index == 11 }
                         newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { true } // 16th notes
+                        newGrid["Hi-Hat"] = List(16) { true }
                         newGrid["808/Bass"] = List(16) { index -> index == 0 || index == 11 }
                     }
                     "BoomBap Swing" -> {
                         newGrid["Kick"] = List(16) { index -> index == 0 || index == 10 }
                         newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 == 0 } // Straight 8ths
+                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 == 0 }
                     }
                     "Synthwave 8ths" -> {
-                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 } // Four on the floor
+                        newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
                         newGrid["Snare"] = List(16) { index -> index == 4 || index == 12 }
-                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 != 0 } // Offbeat hats
+                        newGrid["Hi-Hat"] = List(16) { index -> index % 2 != 0 }
                         newGrid["Pads"] = List(16) { index -> index == 0 || index == 8 }
                     }
                     "Reggaeton 3-2" -> {
                         newGrid["Kick"] = List(16) { index -> index % 4 == 0 }
-                        newGrid["Snare"] = List(16) { index -> index == 3 || index == 6 || index == 11 || index == 14 } // Dem Bow
+                        newGrid["Snare"] = List(16) { index -> index == 3 || index == 6 || index == 11 || index == 14 }
                         newGrid["Clap"] = List(16) { index -> index == 3 || index == 11 }
                     }
                 }
                 section.copy(instrumentGrid = newGrid)
             } else section
         }
-        addXp(120) // Award XP for applying rhythm templates
+        addXp(120)
     }
     
     override fun onCleared() {
@@ -555,7 +590,6 @@ class DawViewModel(
         nativePlayback.close()
     }
 
-    // --- Ari AI Agent States & Logic ---
     private val _ariChatLog = MutableStateFlow(listOf(
         ChatMessage(
             role = "assistant",
@@ -570,7 +604,6 @@ class DawViewModel(
     fun sendMessageToAri(userText: String) {
         if (userText.isBlank()) return
         
-        // Add User Message
         val updatedLog = _ariChatLog.value.toMutableList()
         updatedLog.add(ChatMessage("user", userText))
         _ariChatLog.value = updatedLog
@@ -582,7 +615,7 @@ class DawViewModel(
             val validation = StartupValidator.validateGeminiKey(key)
             
             if (!validation.isGeminiKeyConfigured) {
-                delay(1200) // realistic wait
+                delay(1200)
                 val (reply, cmd) = generateOfflineAriResponse(userText)
                 launch(Dispatchers.Main) {
                     val finalLog = _ariChatLog.value.toMutableList()
@@ -592,14 +625,9 @@ class DawViewModel(
                 }
             } else {
                 try {
-                    // Build complete conversation context
                     val projectContext = getSerializedDawContext()
                     val systemPrompt = getAriSystemPrompt()
-                    
-                    // Convert chat history to API contents
                     val apiContents = mutableListOf<ApiContent>()
-                    
-                    // Add previous messages (limit to last 6 to fit context size comfortably)
                     val historyToInclude = _ariChatLog.value.takeLast(6)
                     for (msg in historyToInclude) {
                         apiContents.add(
@@ -610,7 +638,6 @@ class DawViewModel(
                         )
                     }
                     
-                    // Append current project state as context in the user's latest turn
                     val lastUserTurn = apiContents.lastOrNull { it.role == "user" }
                     if (lastUserTurn != null) {
                         val enrichedText = "${lastUserTurn.parts.firstOrNull()?.text ?: ""}\n\n[CURRENT DAW CONTEXT: $projectContext]"
@@ -642,7 +669,6 @@ class DawViewModel(
                         _isAriTyping.value = false
                     }
                 } catch (e: Exception) {
-                    // Fall back to offline model on any error
                     AppLogger.e("DawViewModel", "Ari cloud pipeline failed, falling back to offline brain", e)
                     delay(1000)
                     val (reply, cmd) = generateOfflineAriResponse(userText)
@@ -675,6 +701,7 @@ class DawViewModel(
                         val reorderedList = order.mapNotNull { currentSections[it] }
                         if (reorderedList.isNotEmpty()) {
                             _sections.value = reorderedList
+                            refreshAllSectionClips()
                         }
                     }
                 }
@@ -710,12 +737,11 @@ class DawViewModel(
                 }
             }
             
-            addXp(250) // award premium co-production points!
+            addXp(250)
             
-            // Post-apply message
             val updatedLog = _ariChatLog.value.map { msg ->
                 if (msg.pendingCommand == command) {
-                    msg.copy(pendingCommand = null) // Clear the command visual since it was applied
+                    msg.copy(pendingCommand = null)
                 } else msg
             }.toMutableList()
             
@@ -741,7 +767,8 @@ class DawViewModel(
                       "reverb": ${section.reverb},
                       "delay": ${section.delay},
                       "filter": ${section.filter},
-                      "volume": ${section.volume}
+                      "volume": ${section.volume},
+                      "clipCount": ${clipsForSection(section.id).size}
                     }"""
                 }}
               ]
