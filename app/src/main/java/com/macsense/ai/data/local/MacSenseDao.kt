@@ -61,4 +61,22 @@ interface MacSenseDao {
 
     @Query("DELETE FROM clips WHERE section_id = :sectionId")
     suspend fun deleteClipsForSection(sectionId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSection(section: SectionEntity)
+
+    @Query("SELECT * FROM sections WHERE project_id = :projectId ORDER BY orderIndex ASC")
+    suspend fun getSectionsForProject(projectId: String): List<SectionEntity>
+
+    @Query("SELECT * FROM sections WHERE project_id = :projectId ORDER BY orderIndex ASC")
+    fun observeSectionsForProject(projectId: String): Flow<List<SectionEntity>>
+
+    @Query("SELECT * FROM sections WHERE id = :id")
+    suspend fun getSectionById(id: String): SectionEntity?
+
+    @Query("DELETE FROM sections WHERE id = :id")
+    suspend fun deleteSection(id: String)
+
+    @Query("DELETE FROM sections WHERE project_id = :projectId")
+    suspend fun deleteSectionsForProject(projectId: String)
 }
