@@ -53,4 +53,22 @@ object Migrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_take_id` ON `clips` (`take_id`)")
         }
     }
+
+    /**
+     * Adds the `project_snapshots` table backing Phase 2's autosave item: one row per project
+     * holding the last-saved bpm + serialized section list, replaced on every autosave rather
+     * than accumulating history (transaction-level undo/redo is handled in-memory instead).
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `project_snapshots` (" +
+                    "`project_id` TEXT NOT NULL, " +
+                    "`bpm` REAL NOT NULL, " +
+                    "`sections_json` TEXT NOT NULL, " +
+                    "`saved_at` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`project_id`))"
+            )
+        }
+    }
 }
