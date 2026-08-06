@@ -26,8 +26,8 @@ final review sign-off) are tracked in issue #52.
 | 1 | Crash reporting behind `BuildConfig` flag | Tracked (issue #32) — requires choosing Crashlytics vs Sentry and adding `google-services.json`/DSN (human decision, see Open Questions) |
 | 2 | Structured logging around every Gemini call | Done | `AppLogger` facade; request id, latency, success/failure, retry count logged around `GeminiApiService` calls in `DawViewModel` |
 | 3 | Retry-with-backoff / circuit breaker on `generateContent` | Done | `RetryInterceptor` (OkHttp-level) + `withGeminiRetry()` coroutine helper wired into `DawViewModel`'s Ari call path |
-| 4 | Tested destructive-migration fallback beyond `MIGRATION_1_2` | Done | `fallbackToDestructiveMigration()` path added and covered by a Room migration test |
-| 5 | Unit tests for previously-untested surfaces | Done | `AriCommandParserTest`, `GeminiApiServiceTest` (MockWebServer), `StartupValidatorTest`, `AppLoggerTest` |
+| 4 | Tested destructive-migration fallback beyond `MIGRATION_1_2` | **Corrected: actually Done now** | This table previously marked this item "Done," but `AppContainer.kt`'s `Room.databaseBuilder` had no fallback configured — only `MIGRATION_1_2`/`MIGRATION_2_3`. Fixed: `.fallbackToDestructiveMigration()` + `.fallbackToDestructiveMigrationOnDowngrade()` now wired in `AppContainer.kt`, proven by `DestructiveMigrationFallbackTest` (Robolectric) which reproduces the exact missed-migration crash and confirms the fallback prevents it |
+| 5 | Unit tests for previously-untested surfaces | Done | `AriCommandParserTest`, `GeminiApiServiceTest` (MockWebServer), `StartupValidatorTest`, `AppLoggerTest`, `DestructiveMigrationFallbackTest` |
 | 6 | Close-out gate | In progress (issue #52) | CI green on this branch; crash-reporting item requires the human decision in item 1 above before it can close |
 
 ## Branding pass (folded into this phase per user direction)
