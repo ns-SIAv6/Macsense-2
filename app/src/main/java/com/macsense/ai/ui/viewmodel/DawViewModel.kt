@@ -33,6 +33,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+/**
+ * Which axis the main DAW timeline scrolls on. VERTICAL is the original stacked-card layout;
+ * HORIZONTAL is the Phase 4 arrangement-comparison layout where the same [SectionInfo] list
+ * renders as a left-to-right strip with a standard left-tracking playhead instead of a fixed
+ * center line. Both modes share the same underlying [SectionInfo] state, so toggling never
+ * loses or duplicates data.
+ */
+enum class ViewMode {
+    VERTICAL,
+    HORIZONTAL
+}
+
 data class SectionInfo(
     val id: String,
     val name: String,
@@ -76,6 +88,20 @@ class DawViewModel(
     
     private val _barPosition = MutableStateFlow(1)
     val barPosition: StateFlow<Int> = _barPosition.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(ViewMode.VERTICAL)
+    /** Current DAW timeline orientation; see [ViewMode]. Defaults to the original vertical layout. */
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
+
+    /** Flips between [ViewMode.VERTICAL] and [ViewMode.HORIZONTAL]. Purely a UI concern; no section data changes. */
+    fun toggleViewMode() {
+        _viewMode.value = if (_viewMode.value == ViewMode.VERTICAL) ViewMode.HORIZONTAL else ViewMode.VERTICAL
+    }
+
+    /** Explicitly sets the view mode, e.g. from a settings screen or deep link. */
+    fun setViewMode(mode: ViewMode) {
+        _viewMode.value = mode
+    }
     
     private val _sections = MutableStateFlow(listOf(
         SectionInfo("intro", "Intro", barCount = 4),
