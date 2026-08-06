@@ -47,4 +47,24 @@ class Converters {
     fun toArchiveState(name: String?): SoundArchive.State? {
         return name?.let { SoundArchive.State.valueOf(it) }
     }
+
+    /**
+     * Serializes the 12-lane step-sequencer grid (`Map<String, List<Boolean>>`) into a compact
+     * JSON object for [SectionEntity.instrumentGridJson], e.g. `{"Kick":[true,false,...]}`.
+     */
+    @TypeConverter
+    fun fromInstrumentGrid(grid: Map<String, List<Boolean>>?): String {
+        if (grid == null) return "{}"
+        return Json.encodeToString(grid)
+    }
+
+    @TypeConverter
+    fun toInstrumentGrid(json: String?): Map<String, List<Boolean>> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            Json.decodeFromString(json)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
 }
