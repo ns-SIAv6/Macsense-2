@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,11 +22,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.macsense.ai.lyrics.LyricDiff
+import com.macsense.ai.lyrics.LyricEditAction
+import com.macsense.ai.lyrics.LyricEditEngine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -183,12 +189,15 @@ object SongwritingEngine {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LyricsStudioScreen() {
-    var lyricsText by remember { mutableStateOf(
-        "Yeah, double cup spilling on the MPC\n" +
-        "Beat so hard, MACSENSE setting me free\n" +
-        "Riding on the wave, neon in the night\n" +
-        "Spitting raw science till the morning light"
+    var lyricsField by remember { mutableStateOf(
+        TextFieldValue(
+            "Yeah, double cup spilling on the MPC\n" +
+            "Beat so hard, MACSENSE setting me free\n" +
+            "Riding on the wave, neon in the night\n" +
+            "Spitting raw science till the morning light"
+        )
     ) }
+    val lyricsText get() = lyricsField.text
 
     var selectedRhymeScheme by remember { mutableStateOf("AABB") }
     var currentWordIndex by remember { mutableStateOf(0) }
@@ -202,6 +211,13 @@ fun LyricsStudioScreen() {
     var selectedGenre by remember { mutableStateOf("Rap") }
     var isWritingGenius by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Highlight-to-AI lyric editing: pending proposal always requires an explicit accept/reject,
+    // per PRODUCTION_HARDENING_PLAN.md Phase 3 — never a silent overwrite.
+    var pendingDiff by remember { mutableStateOf<LyricDiff?>(null) }
+    var isProposingEdit by remember { mutableStateOf(false) }
+    var editSeedCounter by remember { mutableStateOf(0) }
+    val hasSelection = lyricsField.selection.length > 0
 
     val wordsList = remember(lyricsText) {
         lyricsText.split(Regex("\\s+")).filter { it.isNotBlank() }
@@ -224,6 +240,30 @@ fun LyricsStudioScreen() {
             3 -> SongwritingEngine.getAlliterations(activeWord)
             else -> emptyList()
         }
+    }
+
+    fun requestLyricEdit(action: LyricEditAction) {
+        val selection = lyricsField.selection
+        if (selection.length == 0) return
+        val selectedText = lyricsText.substring(selection.min, selection.max)
+        isProposingEdit = true
+        scope.launch {
+            delay(400) // simulate local-inference latency, matches existing Genius Write UX
+            editSeedCounter += 1
+            pendingDiff = LyricEditEngine.propose(selectedText, action, seed = editSeedCounter)
+            isProposingEdit = false
+        }
+    }
+
+    fun acceptPendingDiff() {
+        val diff = pendingDiff ?: return
+        val newText = diff.accept(lyricsText)
+        lyricsField = TextFieldValue(newText, selection = TextRange(newText.length.coerceAtMost(newText.length)))
+        pendingDiff = null
+    }
+
+    fun rejectPendingDiff() {
+        pendingDiff = null
     }
 
     // Sync progress looping coroutine
@@ -292,8 +332,8 @@ fun LyricsStudioScreen() {
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = lyricsText,
-                            onValueChange = { lyricsText = it },
+                            value = lyricsField,
+                            onValueChange = { lyricsField = it },
                             modifier = Modifier.fillMaxSize().testTag("lyrics_input_field"),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent,
@@ -309,6 +349,75 @@ fun LyricsStudioScreen() {
                                 lineHeight = 24.sp
                             )
                         )
+
+                        // Highlight-to-AI action chip row: enabled only when the user has an active
+                        // text selection, matching the spec's "Highlight-to-AI" trigger model.
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("highlight_to_ai_action_row")
+                        ) {
+                            LyricEditAction.entries.forEach { action ->
+                                AssistChip(
+                                    onClick = { requestLyricEdit(action) },
+                                    enabled = hasSelection && !isProposingEdit,
+                                    label = { Text(action.label, fontSize = 9.sp) },
+                                    modifier = Modifier.testTag("highlight_action_${action.name.lowercase()}")
+                                )
+                            }
+                        }
+                        if (!hasSelection) {
+                            Text(
+                                "Highlight lyric text above to enable AI edits.",
+                                color = TextSecondary,
+                                fontSize = 9.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        // Accept/reject diff card — the ONLY path by which an AI edit reaches the
+                        // buffer. Nothing here writes to lyricsField until the user taps Accept.
+                        val diff = pendingDiff
+                        AnimatedVisibility(visible = diff != null || isProposingEdit) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("lyric_diff_card"),
+                                colors = CardDefaults.cardColors(containerColor = BackgroundDark),
+                                border = BorderStroke(1.dp, CyanNeon.copy(alpha = 0.4f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    if (isProposingEdit) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            CircularProgressIndicator(color = CyanNeon, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Ari is drafting an edit…", color = TextSecondary, fontSize = 11.sp)
+                                        }
+                                    } else if (diff != null) {
+                                        Text(diff.action.label.uppercase(), color = CyanNeon, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(diff.explanation, color = TextSecondary, fontSize = 10.sp)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("BEFORE", color = TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        Text(diff.original, color = TextSecondary, fontSize = 11.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text("AFTER", color = MagentaNeon, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        Text(diff.proposed, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(
+                                                onClick = { acceptPendingDiff() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = CyanNeon),
+                                                modifier = Modifier.testTag("lyric_diff_accept_button")
+                                            ) { Text("Accept", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                            OutlinedButton(
+                                                onClick = { rejectPendingDiff() },
+                                                modifier = Modifier.testTag("lyric_diff_reject_button")
+                                            ) { Text("Reject", fontSize = 11.sp) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -403,11 +512,12 @@ fun LyricsStudioScreen() {
                                     scope.launch {
                                         delay(850) // simulate real local inference call
                                         val generatedLine = SongwritingEngine.getGeniusContinuation(lyricsText, activeWord, selectedGenre)
-                                        lyricsText = if (lyricsText.trim().endsWith("\n") || lyricsText.isEmpty()) {
+                                        val newText = if (lyricsText.trim().endsWith("\n") || lyricsText.isEmpty()) {
                                             lyricsText + generatedLine
                                         } else {
                                             lyricsText + "\n" + generatedLine
                                         }
+                                        lyricsField = TextFieldValue(newText, selection = TextRange(newText.length))
                                         isWritingGenius = false
                                     }
                                 },
@@ -531,7 +641,8 @@ fun LyricsStudioScreen() {
                                         .clickable {
                                             // Smart insert word
                                             val space = if (lyricsText.isNotEmpty() && !lyricsText.endsWith(" ") && !lyricsText.endsWith("\n")) " " else ""
-                                            lyricsText = lyricsText + space + suggestion
+                                            val newText = lyricsText + space + suggestion
+                                            lyricsField = TextFieldValue(newText, selection = TextRange(newText.length))
                                         }
                                         .padding(12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
