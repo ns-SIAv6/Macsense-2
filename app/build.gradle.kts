@@ -23,6 +23,12 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Base URL of the Macsense backend gateway (see server/). Ari chat requests go
+        // through this gateway instead of calling Gemini directly, so GEMINI_API_KEY never
+        // ships inside the APK. Override per-build-type below; default points at a typical
+        // local dev server reachable from the Android emulator (10.0.2.2 == host loopback).
+        buildConfigField("String", "GATEWAY_BASE_URL", "\"http://10.0.2.2:8787/\"")
+
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
@@ -46,6 +52,12 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Override with your deployed gateway URL (https only) before shipping a release build.
+            buildConfigField("String", "GATEWAY_BASE_URL", "\"https://CHANGE_ME.example.com/\"")
+        }
+        debug {
+            // Local dev default already set above; override with buildConfigField here if your
+            // gateway runs somewhere other than localhost.
         }
     }
     compileOptions {
