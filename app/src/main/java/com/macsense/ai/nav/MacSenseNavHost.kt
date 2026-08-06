@@ -12,7 +12,7 @@ import com.macsense.ai.ui.viewmodel.DawViewModelFactory
 
 /**
  * [repository] is optional so existing callers/tests (e.g. [NavigationReachabilityTest]) that
- * construct this host without a real [MacSenseRepository] keep working unchanged — [DawViewModel]
+ * construct this host without a real [MacSenseRepository] keep working as-is — [DawViewModel]
  * simply falls back to its `repository = null` default and the sound-genetics Ari commands
  * become no-ops, exactly as before. Production call sites (see [com.macsense.ai.MainActivity])
  * should always pass the real repository from `AppContainer` so `breed_sounds`/`resurrect_sound`

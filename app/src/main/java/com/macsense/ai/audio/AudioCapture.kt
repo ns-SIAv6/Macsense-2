@@ -27,47 +27,51 @@ class AudioCapture(
     @Suppress("MissingPermission")
     fun start(onChunk: ((DoubleArray) -> Unit)? = null): Boolean {
         if (capturing) return false
-        val minimumBuffer = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minimumBuffer <= 0) return false
+        return try {
+            val minimumBuffer = AudioRecord.getMinBufferSize(
+                sampleRate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (minimumBuffer <= 0) return false
 
-        val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            max(minimumBuffer, sampleRate / 5)
-        )
-        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-            audioRecord.release()
-            return false
-        }
-
-        samples.clear()
-        recorder = audioRecord
-        capturing = true
-        captureThread = Thread {
-            val buffer = ShortArray(max(256, sampleRate / 20))
-            try {
-                audioRecord.startRecording()
-                while (capturing) {
-                    val count = audioRecord.read(buffer, 0, buffer.size)
-                    if (count > 0) {
-                        val chunk = DoubleArray(count)
-                        for (index in 0 until count) chunk[index] = buffer[index] / SHORT_SCALE
-                        synchronized(samples) { for (v in chunk) samples += v }
-                        onChunk?.invoke(chunk)
-                    }
-                }
-            } finally {
-                runCatching { audioRecord.stop() }
+            val audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                max(minimumBuffer, sampleRate / 5)
+            )
+            if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
                 audioRecord.release()
+                return false
             }
-        }.also { it.start() }
-        return true
+
+            samples.clear()
+            recorder = audioRecord
+            capturing = true
+            captureThread = Thread {
+                val buffer = ShortArray(max(256, sampleRate / 20))
+                try {
+                    audioRecord.startRecording()
+                    while (capturing) {
+                        val count = audioRecord.read(buffer, 0, buffer.size)
+                        if (count > 0) {
+                            val chunk = DoubleArray(count)
+                            for (index in 0 until count) chunk[index] = buffer[index] / SHORT_SCALE
+                            synchronized(samples) { for (v in chunk) samples += v }
+                            onChunk?.invoke(chunk)
+                        }
+                    }
+                } finally {
+                    runCatching { audioRecord.stop() }
+                    audioRecord.release()
+                }
+            }.also { it.start() }
+            true
+        } catch (e: Throwable) {
+            false
+        }
     }
 
     @Synchronized

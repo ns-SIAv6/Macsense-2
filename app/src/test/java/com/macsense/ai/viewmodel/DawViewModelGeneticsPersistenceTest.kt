@@ -22,8 +22,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * End-to-end tests for the Phase 5 sound-genetics Ari commands (`breed_sounds` /
@@ -35,6 +38,7 @@ import org.junit.Test
  * [UnconfinedTestDispatcher] so `viewModelScope.launch(Dispatchers.IO/Main)` coroutines
  * inside [DawViewModel] run synchronously within each test.
  */
+@RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class DawViewModelGeneticsPersistenceTest {
 
@@ -131,7 +135,19 @@ class DawViewModelGeneticsPersistenceTest {
         )
         vm.applyAriCommand(cmd)
 
-        val bred = vm.lastBredEntry.value
+        var bred = vm.lastBredEntry.value
+        var attempts = 0
+        val maxAttempts = 100 // 1 second total timeout
+        while (bred == null && attempts < maxAttempts) {
+            kotlinx.coroutines.delay(10)
+            bred = vm.lastBredEntry.value
+            attempts++
+        }
+
+        if (bred == null) {
+            fail("Timed out waiting for lastBredEntry to be updated by background breed_sounds coroutine")
+        }
+
         assertNotNull("lastBredEntry should be set after a successful breed_sounds command", bred)
         assertEquals(SoundArchive.State.REBORN, bred?.state)
 
@@ -158,7 +174,19 @@ class DawViewModelGeneticsPersistenceTest {
         )
         vm.applyAriCommand(cmd)
 
-        val resurrected = vm.lastResurrectedEntry.value
+        var resurrected = vm.lastResurrectedEntry.value
+        var attempts = 0
+        val maxAttempts = 100 // 1 second total timeout
+        while (resurrected == null && attempts < maxAttempts) {
+            kotlinx.coroutines.delay(10)
+            resurrected = vm.lastResurrectedEntry.value
+            attempts++
+        }
+
+        if (resurrected == null) {
+            fail("Timed out waiting for lastResurrectedEntry to be updated by background resurrect_sound coroutine")
+        }
+
         assertNotNull("lastResurrectedEntry should be set after a successful resurrect_sound command", resurrected)
         assertEquals(SoundArchive.State.REBORN, resurrected?.state)
         assertEquals("dormant1", resurrected?.originTakeId)

@@ -12,7 +12,10 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
 import org.junit.Before
 import org.junit.After
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class DawViewModelTest {
     
@@ -29,7 +32,7 @@ class DawViewModelTest {
     }
     
     @Test
-    fun testPlayPauseStateTransition() {
+    fun testPlayPauseStateTransition() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         assertFalse(vm.isPlaying.value)
         vm.togglePlayPause()
@@ -39,7 +42,7 @@ class DawViewModelTest {
     }
     
     @Test
-    fun testSectionReorder() {
+    fun testSectionReorder() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val initialSections = vm.sections.value
         assertEquals("intro", initialSections[0].id)
@@ -53,7 +56,7 @@ class DawViewModelTest {
     }
     
     @Test
-    fun testBarPositionAdvancesWithTransportClock() {
+    fun testBarPositionAdvancesWithTransportClock() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         assertEquals(1, vm.barPosition.value)
         vm.advanceBar() // manually advance since we can't easily test the coroutine delay without kotlinx-coroutines-test
@@ -63,7 +66,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun testSendMessageToAriAddsMessageToLog() {
+    fun testSendMessageToAriAddsMessageToLog() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val initialSize = vm.ariChatLog.value.size
         
@@ -76,7 +79,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun testApplyAriCommandBpm() {
+    fun testApplyAriCommandBpm() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val originalBpm = vm.bpm.value
         
@@ -92,7 +95,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun testApplyAriCommandLyrics() {
+    fun testApplyAriCommandLyrics() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val cmd = com.macsense.ai.api.AriCommand(
             type = "update_lyrics",
@@ -108,7 +111,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun testApplyAriCommandReorder() {
+    fun testApplyAriCommandReorder() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val originalOrder = vm.sections.value.map { it.id }
         
@@ -126,7 +129,7 @@ class DawViewModelTest {
     }
 
     @Test
-    fun testApplyAriCommandEffects() {
+    fun testApplyAriCommandEffects() = kotlinx.coroutines.test.runTest(dispatcher) {
         val vm = DawViewModel()
         val cmd = com.macsense.ai.api.AriCommand(
             type = "update_effects",
