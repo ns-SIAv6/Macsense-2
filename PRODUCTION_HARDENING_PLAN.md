@@ -28,8 +28,8 @@ Replaces every simulated/placeholder subsystem with production audio infrastruct
 
 ## Phase 3 — Ari Co-Producer & Creative AI Surface
 Builds the "AI everywhere" experience per issue #38 and the Writing Surface Merge spec (issue #47).
-- [ ] Highlight-to-AI lyric editing (Rewrite, Make more aggressive, Improve rhyme, Better cadence, Change flow) as accept/reject diff only — never a silent overwrite.
-- [ ] Merge writing-surface structure (Solo Writing/AI Assistance/Saved Requests tabs, Identity Bank, docked Ari panel, Creative Stats strip) fully reskinned in DAW-native colors.
+- [x] Highlight-to-AI lyric editing (Rewrite, Make more aggressive, Improve rhyme, Better cadence, Change flow) as accept/reject diff only — never a silent overwrite.
+- [x] Merge writing-surface structure (Solo Writing/AI Assistance/Saved Requests tabs, Identity Bank, docked Ari panel, Creative Stats strip) fully reskinned in DAW-native colors.
 - [x] Unit tests for `AriCommandParser`, `GeminiApi`, `MasteringViewModel`, `FlowCaptureViewModel`, with a fake `GeminiApiService` for deterministic Retrofit-layer tests.
 - [ ] Ship Flow Capture (stopwatch record/stop/think/record, onset detection, elastic time-alignment, BPM/cadence-style settings) starting with Manual BPM + Natural mode.
 
