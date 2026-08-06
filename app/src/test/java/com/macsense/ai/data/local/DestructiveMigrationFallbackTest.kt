@@ -31,13 +31,17 @@ class DestructiveMigrationFallbackTest {
 
     private val dbName = "fallback_test_${System.nanoTime()}.db"
 
+    private fun allRealMigrations() = arrayOf(
+        Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4
+    )
+
     @Test(expected = IllegalStateException::class)
     fun reopeningAtHigherVersionWithoutFallback_throws() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
         // Open + close at the real, current schema version first.
         val original = Room.databaseBuilder(context, MacSenseDatabase::class.java, dbName)
-            .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
+            .addMigrations(*allRealMigrations())
             .build()
         original.openHelper.writableDatabase
         original.close()
@@ -54,7 +58,7 @@ class DestructiveMigrationFallbackTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
         val original = Room.databaseBuilder(context, MacSenseDatabase::class.java, dbName)
-            .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
+            .addMigrations(*allRealMigrations())
             .build()
         original.openHelper.writableDatabase
         original.close()
