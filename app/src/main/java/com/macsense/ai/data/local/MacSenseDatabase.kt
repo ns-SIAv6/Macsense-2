@@ -11,9 +11,10 @@ import androidx.room.TypeConverters
         SoundGenomeEntity::class,
         VersionNodeEntity::class,
         SoundArchiveEntryEntity::class,
-        ClipEntity::class
+        ClipEntity::class,
+        ProjectSnapshotEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
