@@ -23,7 +23,17 @@ data class SectionEntity(
     @PrimaryKey val id: String,
     val projectId: String,
     val name: String,
-    val orderIndex: Int
+    val orderIndex: Int,
+    /**
+     * Phase 4 (issue #39): semantic section label (INTRO/VERSE/PRE/HOOK/BRIDGE/OUTRO) so Ari
+     * can target sections by name and the timeline can color-code regions.
+     */
+    @ColumnInfo(name = "label", defaultValue = "VERSE") val label: String = "VERSE",
+    /**
+     * Phase 4 (issue #39): per-section prompt memory — the Ari prompt that generated/defined
+     * this section, editable inline in the DAW.
+     */
+    @ColumnInfo(name = "ari_prompt", defaultValue = "") val ariPrompt: String = ""
 )
 
 @Entity(tableName = "sound_genomes")

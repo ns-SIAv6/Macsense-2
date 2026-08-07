@@ -6,6 +6,8 @@ import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.Converters
 import com.macsense.ai.data.local.MacSenseDao
 import com.macsense.ai.data.local.ProjectEntity
+import com.macsense.ai.data.local.SectionEntity
+import com.macsense.ai.data.local.VersionNodeEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
 import com.macsense.ai.data.local.SoundGenomeEntity
 import kotlinx.coroutines.flow.Flow
@@ -81,6 +83,27 @@ class MacSenseRepository(private val dao: MacSenseDao) {
     suspend fun deleteClipsForSection(sectionId: String) {
         dao.deleteClipsForSection(sectionId)
     }
+
+
+    // --- Phase 4 (issue #39): sections + version branching ---
+
+    suspend fun upsertSection(section: SectionEntity) {
+        dao.upsertSection(section)
+    }
+
+    suspend fun getSectionsForProject(projectId: String): List<SectionEntity> =
+        dao.getSectionsForProject(projectId)
+
+    suspend fun updateSectionAriPrompt(sectionId: String, prompt: String) {
+        dao.updateSectionAriPrompt(sectionId, prompt)
+    }
+
+    suspend fun insertVersionNode(node: VersionNodeEntity) {
+        dao.insertVersionNode(node)
+    }
+
+    suspend fun getVersionNodesForProject(projectId: String): List<VersionNodeEntity> =
+        dao.getVersionNodesForProject(projectId)
 
     private fun SoundArchiveEntryEntity.toDomain(): SoundArchive.Entry = SoundArchive.Entry(
         takeId = takeId,

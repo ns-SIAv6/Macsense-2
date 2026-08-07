@@ -21,7 +21,12 @@ import com.macsense.ai.audio.SoundBreeder
 import com.macsense.ai.audio.SoundGenome
 import com.macsense.ai.audio.SoundLineage
 import com.macsense.ai.audio.TransportClock
+import com.macsense.ai.audio.StemTrack
+import com.macsense.ai.audio.StemType
+import com.macsense.ai.audio.StemMixer
+import com.macsense.ai.audio.ProjectVersionTree
 import com.macsense.ai.data.local.ClipEntity
+import com.macsense.ai.data.local.VersionNodeEntity
 import com.macsense.ai.data.repository.MacSenseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,10 +39,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+/** Phase 4 (issue #39): semantic timeline labels Ari can target by name. */
+enum class SectionLabel { INTRO, VERSE, PRE, HOOK, BRIDGE, OUTRO }
+
 data class SectionInfo(
     val id: String,
     val name: String,
     val barCount: Int = 8,
+    val label: SectionLabel = SectionLabel.VERSE,
+    /** Phase 4: the Ari prompt that generated/defined this section, editable inline. */
+    val ariPrompt: String = "",
     val isExpanded: Boolean = false,
     val lyrics: String = "Yeah, double cup spilling on the MPC\nBeat so hard, MACSENSE setting me free",
     val instrumentGrid: Map<String, List<Boolean>> = createDefaultGrid(),
@@ -79,11 +90,11 @@ class DawViewModel(
     val barPosition: StateFlow<Int> = _barPosition.asStateFlow()
     
     private val _sections = MutableStateFlow(listOf(
-        SectionInfo("intro", "Intro", barCount = 4),
-        SectionInfo("verse1", "Verse 1", barCount = 16),
-        SectionInfo("hook", "Hook", barCount = 8),
-        SectionInfo("bridge", "Bridge", barCount = 8),
-        SectionInfo("outro", "Outro", barCount = 4)
+        SectionInfo("intro", "Intro", barCount = 4, label = SectionLabel.INTRO),
+        SectionInfo("verse1", "Verse 1", barCount = 16, label = SectionLabel.VERSE),
+        SectionInfo("hook", "Hook", barCount = 8, label = SectionLabel.HOOK),
+        SectionInfo("bridge", "Bridge", barCount = 8, label = SectionLabel.BRIDGE),
+        SectionInfo("outro", "Outro", barCount = 4, label = SectionLabel.OUTRO)
     ))
     val sections: StateFlow<List<SectionInfo>> = _sections.asStateFlow()
 
@@ -95,6 +106,27 @@ class DawViewModel(
      */
     val clipsBySection: StateFlow<Map<String, List<ClipEntity>>> = _clipsBySection.asStateFlow()
     
+    // --- Phase 4 (issue #39): typed stem tracks with per-stem gain/mute/solo ---
+    private val _stemTracks = MutableStateFlow(
+        StemType.values().map { type -> StemTrack(id = type.name.lowercase(), type = type) }
+    )
+    val stemTracks: StateFlow<List<StemTrack>> = _stemTracks.asStateFlow()
+
+    /** Effective linear gain per stem id, honoring mute/solo semantics. */
+    val stemEffectiveGains: Map<String, Float>
+        get() = StemMixer.effectiveGains(_stemTracks.value)
+
+    // --- Phase 4 (issue #39): loop region state (waveform interaction: tap to set loop points) ---
+    private val _loopRegion = MutableStateFlow<Pair<Int, Int>?>(null)
+    val loopRegion: StateFlow<Pair<Int, Int>?> = _loopRegion.asStateFlow()
+
+    // --- Phase 4 (issue #39): A/B version branching over persisted VersionNodeEntity rows ---
+    private val _versionTree = MutableStateFlow(ProjectVersionTree())
+    val versionTree: StateFlow<ProjectVersionTree> = _versionTree.asStateFlow()
+
+    private val _currentVersionId = MutableStateFlow<String?>(null)
+    val currentVersionId: StateFlow<String?> = _currentVersionId.asStateFlow()
+
     private val _bpm = MutableStateFlow(120.0)
     val bpm: StateFlow<Double> = _bpm.asStateFlow()
     
@@ -483,6 +515,123 @@ class DawViewModel(
         }
     }
     
+    // --- Phase 4 (issue #39): stem mixer controls ---
+
+    fun setStemGain(stemId: String, gainDb: Float) {
+        _stemTracks.value = _stemTracks.value.map {
+            if (it.id == stemId) it.copy(gainDb = StemMixer.clampGainDb(gainDb)) else it
+        }
+    }
+
+    fun toggleStemMute(stemId: String) {
+        _stemTracks.value = _stemTracks.value.map {
+            if (it.id == stemId) it.copy(muted = !it.muted) else it
+        }
+    }
+
+    fun toggleStemSolo(stemId: String) {
+        _stemTracks.value = _stemTracks.value.map {
+            if (it.id == stemId) it.copy(soloed = !it.soloed) else it
+        }
+    }
+
+    // --- Phase 4 (issue #39): loop region (tap to set loop points on the timeline) ---
+
+    fun setLoopRegion(startBar: Int, endBar: Int) {
+        if (startBar < 0 || endBar <= startBar) {
+            AppLogger.w("DawViewModel", "Rejected invalid loop region [$startBar, $endBar)")
+            return
+        }
+        _loopRegion.value = startBar to endBar
+        transportClock.setLoopRegion(startBar, endBar)
+    }
+
+    fun clearLoopRegion() {
+        _loopRegion.value = null
+        transportClock.setLoopRegion(null, null)
+    }
+
+    // --- Phase 4 (issue #39): per-section semantic labels + Ari prompt memory ---
+
+    fun updateSectionLabel(sectionId: String, label: SectionLabel) {
+        _sections.value = _sections.value.map {
+            if (it.id == sectionId) it.copy(label = label) else it
+        }
+    }
+
+    /** Finds sections Ari can target by semantic name ("the hook", "verse 2", ...). */
+    fun sectionsWithLabel(label: SectionLabel): List<SectionInfo> =
+        _sections.value.filter { it.label == label }
+
+    fun updateSectionAriPrompt(sectionId: String, prompt: String) {
+        _sections.value = _sections.value.map {
+            if (it.id == sectionId) it.copy(ariPrompt = prompt) else it
+        }
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repo.updateSectionAriPrompt(sectionId, prompt)
+            } catch (t: Throwable) {
+                AppLogger.e("DawViewModel", "Failed to persist section prompt for $sectionId", t)
+            }
+        }
+    }
+
+    // --- Phase 4 (issue #39): A/B version branching ---
+
+    /** Loads the persisted version tree for this project into memory. */
+    fun refreshVersionTree() {
+        val repo = repository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val nodes = repo.getVersionNodesForProject(genomeProjectId)
+            withContext(Dispatchers.Main) {
+                _versionTree.value = ProjectVersionTree(nodes)
+                if (_currentVersionId.value == null) {
+                    _currentVersionId.value = nodes.lastOrNull()?.id
+                }
+            }
+        }
+    }
+
+    /**
+     * Forks the current project version: creates a child version node users can switch to,
+     * try a different arrangement on, and A/B against the original.
+     */
+    fun forkCurrentVersion(now: Long = System.currentTimeMillis()): String {
+        val tree = _versionTree.value
+        val parentId = _currentVersionId.value
+        val newId = UUID.randomUUID().toString()
+        val newNode = if (parentId != null && tree.node(parentId) != null) {
+            tree.fork(parentId, newId, genomeProjectId, now)
+        } else {
+            tree.add(VersionNodeEntity(id = newId, projectId = genomeProjectId, parentId = null, timestamp = now))
+        }
+        _versionTree.value = ProjectVersionTree(tree.nodes)
+        _currentVersionId.value = newId
+        val repo = repository
+        if (repo != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    repo.insertVersionNode(newNode)
+                } catch (t: Throwable) {
+                    AppLogger.e("DawViewModel", "Failed to persist version node $newId", t)
+                }
+            }
+        } else {
+            AppLogger.i("DawViewModel", "Forked version $newId in-memory only; no repository wired")
+        }
+        return newId
+    }
+
+    /** Switches the active version for A/B comparison. */
+    fun switchToVersion(versionId: String) {
+        if (_versionTree.value.node(versionId) == null) {
+            AppLogger.w("DawViewModel", "Cannot switch to unknown version $versionId")
+            return
+        }
+        _currentVersionId.value = versionId
+    }
+
     private fun startTransportClock() {
         playbackJob?.cancel()
         transportClock.setBpm(_bpm.value)

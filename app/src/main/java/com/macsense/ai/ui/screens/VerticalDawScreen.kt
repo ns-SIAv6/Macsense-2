@@ -206,6 +206,15 @@ fun VerticalDawScreen(viewModel: DawViewModel = viewModel()) {
                 }
             }
 
+            // Phase 4 (issue #39): typed stem tracks with per-stem gain/mute/solo
+            val stems by viewModel.stemTracks.collectAsState()
+            StemMixerPanel(
+                stems = stems,
+                onGainChange = { id, gain -> viewModel.setStemGain(id, gain) },
+                onToggleMute = { viewModel.toggleStemMute(it) },
+                onToggleSolo = { viewModel.toggleStemSolo(it) }
+            )
+
             // Bottom Transport Bar
             TransportBar(
                 isPlaying = isPlaying,

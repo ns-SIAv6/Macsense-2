@@ -2,6 +2,8 @@ package com.macsense.ai.viewmodel
 
 import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.MacSenseDao
+import com.macsense.ai.data.local.VersionNodeEntity
+import com.macsense.ai.data.local.SectionEntity
 import com.macsense.ai.data.local.ProjectEntity
 import com.macsense.ai.data.local.SoundArchiveEntryEntity
 import com.macsense.ai.data.local.SoundGenomeEntity
@@ -32,6 +34,12 @@ class DawViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
 
     private class FakeClipBackedDao : MacSenseDao {
+        override suspend fun upsertSection(section: SectionEntity) = Unit
+        override suspend fun getSectionsForProject(projectId: String): List<SectionEntity> = emptyList()
+        override suspend fun updateSectionAriPrompt(sectionId: String, prompt: String) = Unit
+        override suspend fun insertVersionNode(node: VersionNodeEntity) = Unit
+        override suspend fun getVersionNodesForProject(projectId: String): List<VersionNodeEntity> = emptyList()
+
         val projects = mutableListOf<ProjectEntity>()
         val archiveEntries = mutableListOf<SoundArchiveEntryEntity>()
         val genomes = mutableListOf<SoundGenomeEntity>()

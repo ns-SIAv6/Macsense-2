@@ -21,7 +21,39 @@ class TransportClock(private val nowNanos: () -> Long = { System.nanoTime() }) {
     var barIndex = 0
         private set
 
+    /** Phase 4 loop region (issue #39): when set, playback wraps inside [loopStartBar, loopEndBar). */
+    var loopStartBar: Int? = null
+        private set
+    var loopEndBar: Int? = null
+        private set
+
     private var startNanos: Long = 0L
+
+    /**
+     * Sets (or clears, when either is null) the loop region. Start is inclusive, end exclusive;
+     * the region must be at least one bar long and non-negative.
+     */
+    fun setLoopRegion(startBar: Int?, endBar: Int?) {
+        if (startBar == null || endBar == null) {
+            loopStartBar = null
+            loopEndBar = null
+            return
+        }
+        require(startBar >= 0 && endBar > startBar) {
+            "Invalid loop region [$startBar, $endBar): start must be >= 0 and end > start"
+        }
+        loopStartBar = startBar
+        loopEndBar = endBar
+    }
+
+    /** Maps an absolute elapsed bar count into the loop region, if one is active. */
+    fun applyLoop(absoluteBar: Int): Int {
+        val start = loopStartBar ?: return absoluteBar
+        val end = loopEndBar ?: return absoluteBar
+        if (absoluteBar < end) return absoluteBar
+        val length = end - start
+        return start + (absoluteBar - start) % length
+    }
 
     fun start() {
         startNanos = nowNanos()
@@ -63,9 +95,12 @@ class TransportClock(private val nowNanos: () -> Long = { System.nanoTime() }) {
         return max(0L, remainingNanos / 1_000_000L)
     }
 
-    /** Advances to the bar that wall-clock time indicates we should be on. Safe to call repeatedly. */
+    /**
+     * Advances to the bar that wall-clock time indicates we should be on, wrapped into the
+     * active loop region when one is set. Safe to call repeatedly.
+     */
     fun advance(): Int {
-        barIndex = expectedBarIndex()
+        barIndex = applyLoop(expectedBarIndex())
         return barIndex
     }
 

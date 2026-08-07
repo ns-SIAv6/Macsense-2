@@ -33,6 +33,16 @@ object Migrations {
      * the schema rationale (lane-as-track, take-id reference instead of duplicated audio,
      * per-clip trim/gain/mute, CASCADE delete tied to the owning section).
      */
+    /**
+     * Phase 4 (issue #39): semantic section labels + per-section Ari prompt memory.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE sections ADD COLUMN label TEXT NOT NULL DEFAULT 'VERSE'")
+            db.execSQL("ALTER TABLE sections ADD COLUMN ari_prompt TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
     val MIGRATION_3_4 = object : Migration(3, 4) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(

@@ -61,4 +61,23 @@ interface MacSenseDao {
 
     @Query("DELETE FROM clips WHERE section_id = :sectionId")
     suspend fun deleteClipsForSection(sectionId: String)
+
+    // --- Phase 4 (issue #39): sections with semantic labels + prompt memory ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSection(section: SectionEntity)
+
+    @Query("SELECT * FROM sections WHERE projectId = :projectId ORDER BY orderIndex ASC")
+    suspend fun getSectionsForProject(projectId: String): List<SectionEntity>
+
+    @Query("UPDATE sections SET ari_prompt = :prompt WHERE id = :sectionId")
+    suspend fun updateSectionAriPrompt(sectionId: String, prompt: String)
+
+    // --- Phase 4 (issue #39): A/B version branching nodes ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVersionNode(node: VersionNodeEntity)
+
+    @Query("SELECT * FROM version_nodes WHERE projectId = :projectId ORDER BY timestamp ASC")
+    suspend fun getVersionNodesForProject(projectId: String): List<VersionNodeEntity>
 }
