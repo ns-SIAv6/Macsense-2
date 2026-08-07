@@ -26,6 +26,9 @@ import com.macsense.ai.audio.StemType
 import com.macsense.ai.audio.StemMixer
 import com.macsense.ai.audio.ProjectVersionTree
 import com.macsense.ai.export.GenomeArtifactCodec
+import com.macsense.ai.lyrics.LyricExporter
+import com.macsense.ai.lyrics.RhymeAnalyzer
+import com.macsense.ai.lyrics.SyllableBeatAligner
 import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.VersionNodeEntity
 import com.macsense.ai.data.repository.MacSenseRepository
@@ -583,6 +586,28 @@ class DawViewModel(
         }
     }
     
+    // --- P7 (issue #42): section-linked lyric intelligence + export ---
+
+    /** All section lyrics in timeline order — the DAW-side view Lyrics Studio stays in sync with. */
+    fun sectionLyricsLines(): List<String> =
+        _sections.value.flatMap { it.lyrics.lines() }.filter { it.isNotBlank() }
+
+    /** End-rhyme groups across the whole song, per section order. */
+    fun analyzeEndRhymes(): List<RhymeAnalyzer.RhymeGroup> =
+        RhymeAnalyzer.endRhymeGroups(sectionLyricsLines())
+
+    /** Syllable-to-beat alignment against the 16-step grid; off-grid lines get flagged. */
+    fun analyzeSyllableAlignment(barsPerLine: Int = 1): List<SyllableBeatAligner.LineAlignment> =
+        SyllableBeatAligner.align(sectionLyricsLines(), barsPerLine = barsPerLine)
+
+    /** LRC export of the current song lyrics at the project BPM (feeds lyric videos). */
+    fun exportLyricsAsLrc(title: String? = null, artist: String? = null): String =
+        LyricExporter.toLrc(LyricExporter.timeLines(sectionLyricsLines(), _bpm.value), title, artist)
+
+    /** SRT captions export of the current song lyrics at the project BPM. */
+    fun exportLyricsAsSrt(): String =
+        LyricExporter.toSrt(LyricExporter.timeLines(sectionLyricsLines(), _bpm.value))
+
     // --- Phase 4 (issue #39): stem mixer controls ---
 
     fun setStemGain(stemId: String, gainDb: Float) {
