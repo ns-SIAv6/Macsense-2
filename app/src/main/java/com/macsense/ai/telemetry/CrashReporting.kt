@@ -42,7 +42,10 @@ class NoOpCrashReporter : CrashReporter {
  * reporting is enabled via [BuildConfig.CRASH_REPORTING_ENABLED]. Install once from
  * `MacSenseApplication.onCreate()`.
  */
-class CrashReportingLogSink(private val reporter: CrashReporter) : AppLogger.Sink {
+class CrashReportingLogSink(
+    private val reporter: CrashReporter,
+    private val enabled: Boolean = BuildConfig.CRASH_REPORTING_ENABLED,
+) : AppLogger.Sink {
     override fun log(level: AppLogger.Level, tag: String, message: String, throwable: Throwable?) {
         if (BuildConfig.DEBUG) {
             when (level) {
@@ -52,7 +55,7 @@ class CrashReportingLogSink(private val reporter: CrashReporter) : AppLogger.Sin
                 AppLogger.Level.ERROR -> println("E/$tag: $message${throwable?.let { " ($it)" } ?: ""}")
             }
         }
-        if (!BuildConfig.CRASH_REPORTING_ENABLED) return
+        if (!enabled) return
         if (throwable != null && (level == AppLogger.Level.ERROR || level == AppLogger.Level.WARN)) {
             reporter.recordException(throwable, tag, message)
         } else if (level == AppLogger.Level.ERROR) {

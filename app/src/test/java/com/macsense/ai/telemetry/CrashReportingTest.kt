@@ -31,7 +31,7 @@ class CrashReportingTest {
     @Test
     fun `sink forwards error with throwable to reporter as exception`() {
         val reporter = FakeReporter()
-        val sink = CrashReportingLogSink(reporter)
+        val sink = CrashReportingLogSink(reporter, enabled = true)
         val error = IllegalStateException("boom")
 
         sink.log(AppLogger.Level.ERROR, "Ari", "Gemini call failed", error)
@@ -45,7 +45,7 @@ class CrashReportingTest {
     @Test
     fun `sink forwards error without throwable as log`() {
         val reporter = FakeReporter()
-        val sink = CrashReportingLogSink(reporter)
+        val sink = CrashReportingLogSink(reporter, enabled = true)
 
         sink.log(AppLogger.Level.ERROR, "Ari", "Unknown failure", null)
 
@@ -57,7 +57,7 @@ class CrashReportingTest {
     @Test
     fun `sink ignores debug and info levels`() {
         val reporter = FakeReporter()
-        val sink = CrashReportingLogSink(reporter)
+        val sink = CrashReportingLogSink(reporter, enabled = true)
 
         sink.log(AppLogger.Level.DEBUG, "Ari", "debug msg", null)
         sink.log(AppLogger.Level.INFO, "Ari", "info msg", null)
