@@ -25,6 +25,7 @@ import com.macsense.ai.audio.StemTrack
 import com.macsense.ai.audio.StemType
 import com.macsense.ai.audio.StemMixer
 import com.macsense.ai.audio.ProjectVersionTree
+import com.macsense.ai.export.GenomeArtifactCodec
 import com.macsense.ai.data.local.ClipEntity
 import com.macsense.ai.data.local.VersionNodeEntity
 import com.macsense.ai.data.repository.MacSenseRepository
@@ -391,6 +392,73 @@ class DawViewModel(
                 AppLogger.i("DawViewModel", "Resurrected $takeId as $newTakeId")
             } catch (e: Exception) {
                 AppLogger.e("DawViewModel", "resurrect_sound failed for $takeId", e)
+            }
+        }
+    }
+
+    // --- P5 flagship (issues #37, #61): cross-project Sound DNA export/import breeding ---
+
+    private val _lastExportedArtifact = MutableStateFlow<String?>(null)
+    val lastExportedArtifact: StateFlow<String?> = _lastExportedArtifact.asStateFlow()
+
+    private val _lastImportedEntry = MutableStateFlow<SoundArchive.Entry?>(null)
+    val lastImportedEntry: StateFlow<SoundArchive.Entry?> = _lastImportedEntry.asStateFlow()
+
+    /**
+     * Exports a take's genome as a shareable Sound DNA artifact. Returns null (and logs) when
+     * the take is unknown or has no genome — never a silent empty artifact.
+     */
+    fun exportGenomeArtifact(
+        takeId: String,
+        trackName: String,
+        creatorName: String,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val repo = repository
+        if (repo == null) {
+            AppLogger.i("DawViewModel", "export_genome requested but no repository is wired up; skipping")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val entry = repo.getArchiveEntryByTakeId(takeId)
+                if (entry?.genome == null) {
+                    AppLogger.w("DawViewModel", "export_genome: no genome for take $takeId")
+                    return@launch
+                }
+                val lineage = SoundLineage(repo.getArchiveEntries())
+                val summary = lineage.ancestors(takeId).joinToString(" -> ") { it.takeId }
+                    .ifEmpty { null }
+                val artifact = GenomeArtifactCodec.export(entry, trackName, creatorName, now, summary)
+                withContext(Dispatchers.Main) { _lastExportedArtifact.value = artifact }
+                AppLogger.i("DawViewModel", "Exported Sound DNA for $takeId")
+            } catch (e: Exception) {
+                AppLogger.e("DawViewModel", "export_genome failed for $takeId", e)
+            }
+        }
+    }
+
+    /**
+     * Imports a Sound DNA artifact from another project into the local archive so it can be
+     * bred against local sounds. Ancestry inside the genome (parents/sourceId/confidence)
+     * survives the boundary — the #61 lineage-integrity requirement.
+     */
+    fun importGenomeArtifact(raw: String, newTakeId: String = UUID.randomUUID().toString()) {
+        val repo = repository
+        if (repo == null) {
+            AppLogger.i("DawViewModel", "import_genome requested but no repository is wired up; skipping")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val entry = GenomeArtifactCodec.import(raw, newTakeId)
+                repo.upsertArchiveEntry(entry)
+                entry.genome?.let { repo.upsertSoundGenome(genomeProjectId, it) }
+                withContext(Dispatchers.Main) { _lastImportedEntry.value = entry }
+                refreshArchiveEntries()
+                AppLogger.i("DawViewModel", "Imported Sound DNA as $newTakeId")
+            } catch (e: Exception) {
+                AppLogger.e("DawViewModel", "import_genome failed: invalid artifact", e)
             }
         }
     }

@@ -38,6 +38,8 @@ fun BreedingScreen(viewModel: DawViewModel = viewModel()) {
     val archiveEntries by viewModel.archiveEntries.collectAsState()
     val lastBredEntry by viewModel.lastBredEntry.collectAsState()
     val lastResurrectedEntry by viewModel.lastResurrectedEntry.collectAsState()
+    val lastExportedArtifact by viewModel.lastExportedArtifact.collectAsState()
+    val lastImportedEntry by viewModel.lastImportedEntry.collectAsState()
 
     var selectedParentA by remember { mutableStateOf<String?>(null) }
     var selectedParentB by remember { mutableStateOf<String?>(null) }
@@ -203,6 +205,29 @@ fun BreedingScreen(viewModel: DawViewModel = viewModel()) {
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
+
+                // P5 flagship (issues #37, #61): Sound DNA export/import breeding loop
+                item {
+                    Text(
+                        text = "SOUND DNA",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
+                item {
+                    SoundDnaPanel(
+                        selectedTakeId = selectedParentA ?: selectedResurrectionTarget,
+                        exportedArtifact = lastExportedArtifact,
+                        importedEntry = lastImportedEntry,
+                        onExport = { takeId ->
+                            viewModel.exportGenomeArtifact(takeId, trackName = takeId, creatorName = "MacSense")
+                        },
+                        onImport = { raw -> viewModel.importGenomeArtifact(raw) }
                     )
                 }
 
