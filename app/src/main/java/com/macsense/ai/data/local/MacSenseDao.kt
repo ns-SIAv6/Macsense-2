@@ -20,6 +20,16 @@ interface MacSenseDao {
     @Query("DELETE FROM projects WHERE id = :id")
     suspend fun deleteProject(id: String)
 
+    // P8 (issue #43): sync bookkeeping
+    @Query("SELECT * FROM projects WHERE is_dirty = 1")
+    suspend fun getDirtyProjects(): List<ProjectEntity>
+
+    @Query("UPDATE projects SET cloud_id = :cloudId, last_synced = :syncedAt, is_dirty = 0 WHERE id = :id")
+    suspend fun markProjectSynced(id: String, cloudId: String, syncedAt: Long)
+
+    @Query("UPDATE projects SET is_dirty = 1 WHERE id = :id")
+    suspend fun markProjectDirty(id: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSoundArchiveEntry(entry: SoundArchiveEntryEntity)
 

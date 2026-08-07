@@ -41,6 +41,9 @@ class DawViewModelFactoryTest {
     }
 
     private class NoOpDao : MacSenseDao {
+        override suspend fun getDirtyProjects(): List<ProjectEntity> = emptyList()
+        override suspend fun markProjectSynced(id: String, cloudId: String, syncedAt: Long) = Unit
+        override suspend fun markProjectDirty(id: String) = Unit
         override suspend fun upsertSection(section: SectionEntity) = Unit
         override suspend fun getSectionsForProject(projectId: String): List<SectionEntity> = emptyList()
         override suspend fun updateSectionAriPrompt(sectionId: String, prompt: String) = Unit

@@ -15,7 +15,13 @@ data class ProjectEntity(
     @ColumnInfo(name = "name") val name: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
-    @ColumnInfo(name = "bpm", defaultValue = "120.0") val bpm: Double
+    @ColumnInfo(name = "bpm", defaultValue = "120.0") val bpm: Double,
+    /** P8 (issue #43): id of the mirrored row in Supabase; null until first successful sync. */
+    @ColumnInfo(name = "cloud_id") val cloudId: String? = null,
+    /** P8 (issue #43): epoch ms of the last successful sync; 0 = never synced. */
+    @ColumnInfo(name = "last_synced", defaultValue = "0") val lastSynced: Long = 0L,
+    /** P8 (issue #43): true when local changes have not reached the cloud yet. */
+    @ColumnInfo(name = "is_dirty", defaultValue = "1") val isDirty: Boolean = true
 )
 
 @Entity(tableName = "sections")
