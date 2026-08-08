@@ -1,0 +1,116 @@
+name: Release
+
+# ---------------------------------------------------------------
+# Manual-approval gate: only fires when a human pushes a version
+# tag (v*.*.*) after reviewing the production checklist below.
+# CI builds the signed release APK and creates a GitHub Release.
+# ---------------------------------------------------------------
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  # ---- 1. Pre-flight: run the full test suite before anything ships ----
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Inject secrets into .env
+        run: |
+          cp .env.example .env
+          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> .env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+      - run: ./gradlew testReleaseUnitTest --stacktrace
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-reports
+          path: app/build/reports
+
+  # ---- 2. Build signed release APK ----
+  build-release:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_FILE: release.keystore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > $KEYSTORE_FILE
+
+      - name: Inject secrets
+        run: |
+          cp .env.example .env
+          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> .env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+
+      - name: Assemble signed release APK
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/$KEYSTORE_FILE \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }} \
+            --stacktrace
+
+      - name: Rename APK with version tag
+        run: |
+          TAG=${{ github.ref_name }}
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          mv "$APK" "app/build/outputs/apk/release/MACSENSE-AI-${TAG}.apk"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macsense-release-apk-${{ github.ref_name }}
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 90
+
+  # ---- 3. Create GitHub Release with the APK attached ----
+  github-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: macsense-release-apk-${{ github.ref_name }}
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MACSENSE AI ${{ github.ref_name }}
+          body: |
+            ## MACSENSE AI ${{ github.ref_name }}
+
+            ### Production Sign-Off Checklist
+            - [ ] All unit tests pass (CI verified above)
+            - [ ] Sentry DSN configured and crash reporting enabled
+            - [ ] Supabase sync tested (online + offline)
+            - [ ] ProGuard rules verified, no stripping of kotlinx.serialization
+            - [ ] APK signed with production keystore
+            - [ ] Manual smoke-test: DAW, FlowCapture, BreedingLab, VocalScanner all load
+            - [ ] Distribution submitted to DistroKit / TuneCore (see DISTRIBUTION.md)
+
+            ### Files
+            - `MACSENSE-AI-${{ github.ref_name }}.apk` — production release APK
+          files: dist/*.apk
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
