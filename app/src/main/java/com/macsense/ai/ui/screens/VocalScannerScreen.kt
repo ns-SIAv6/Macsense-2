@@ -17,101 +17,82 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.macsense.ai.audio.VocalPresetScanner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Vocal Preset Scanner screen — Milestone 5.
+ *
+ * Three preset modes: Match Closely / Fit My Voice / Blend Styles.
+ * Each mode drives a full plugin chain (AutoTune, EQ, Compressor, FX).
+ * Plugin settings are computed by [VocalPresetScanner.computePreset] and
+ * exposed as editable sliders so the user can fine-tune after scanning.
+ *
+ * Ari command surface: parseVocalScannerCommand() in VocalScannerCommands.kt
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VocalScannerScreen() {
     var isScanning by remember { mutableStateOf(false) }
     var scanProgress by remember { mutableStateOf(0f) }
     var isScanComplete by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf("Fit My Voice") } // Match Closely, Fit My Voice, Blend Styles
-
-    // Plugin values state
-    var autoTuneSpeed by remember { mutableStateOf(15f) }
-    var eqLow by remember { mutableStateOf(-2f) }
-    var eqMid by remember { mutableStateOf(1.5f) }
-    var eqHigh by remember { mutableStateOf(4f) }
-    var compThreshold by remember { mutableStateOf(-16f) }
-    var compRatio by remember { mutableStateOf(4f) }
-    var reverbMix by remember { mutableStateOf(25f) }
-    var delayFeedback by remember { mutableStateOf(30f) }
-
+    var selectedMode by remember { mutableStateOf("Fit My Voice") }
     val scope = rememberCoroutineScope()
 
-    val infiniteRotation = rememberInfiniteTransition(label = "Scan Loader")
-    val rotationAngle by infiniteRotation.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "Rotation"
-    )
+    // Derive preset from VocalPresetScanner whenever mode changes
+    val preset by remember(selectedMode, isScanComplete) {
+        derivedStateOf {
+            VocalPresetScanner.computePreset(
+                mode = VocalPresetScanner.modeFromString(selectedMode)
+            )
+        }
+    }
+
+    // Sliders mirror the preset but are individually editable
+    var autoTuneSpeed by remember(preset) { mutableStateOf(preset.autoTuneSpeedMs) }
+    var eqLow by remember(preset) { mutableStateOf(preset.eqLowDb) }
+    var eqMid by remember(preset) { mutableStateOf(preset.eqMidDb) }
+    var eqHigh by remember(preset) { mutableStateOf(preset.eqHighDb) }
+    var compThreshold by remember(preset) { mutableStateOf(preset.compThresholdDb) }
+    var compRatio by remember(preset) { mutableStateOf(preset.compRatio) }
+    var reverbMix by remember(preset) { mutableStateOf(preset.reverbMixPct) }
+    var delayFeedback by remember(preset) { mutableStateOf(preset.delayFeedbackPct) }
 
     fun runVocalScan() {
         isScanning = true
         isScanComplete = false
         scanProgress = 0f
         scope.launch {
-            for (i in 1..100) {
-                delay(30)
-                scanProgress = i / 100f
+            repeat(100) { i ->
+                delay(28)
+                scanProgress = (i + 1) / 100f
             }
             isScanning = false
             isScanComplete = true
-            // Load preset parameters depending on tuning mode
-            when (selectedMode) {
-                "Match Closely" -> {
-                    autoTuneSpeed = 3f
-                    eqLow = -4f
-                    eqMid = 0.5f
-                    eqHigh = 6f
-                    compThreshold = -22f
-                    compRatio = 6f
-                    reverbMix = 35f
-                    delayFeedback = 45f
-                }
-                "Fit My Voice" -> {
-                    autoTuneSpeed = 18f
-                    eqLow = -1f
-                    eqMid = 2f
-                    eqHigh = 3.5f
-                    compThreshold = -14f
-                    compRatio = 3.5f
-                    reverbMix = 15f
-                    delayFeedback = 20f
-                }
-                "Blend Styles" -> {
-                    autoTuneSpeed = 10f
-                    eqLow = -2.5f
-                    eqMid = 1f
-                    eqHigh = 4.5f
-                    compThreshold = -18f
-                    compRatio = 4.5f
-                    reverbMix = 25f
-                    delayFeedback = 35f
-                }
-            }
         }
     }
+
+    val infiniteRotation = rememberInfiniteTransition(label = "scan-spin")
+    val rotationAngle by infiniteRotation.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
+        label = "spin"
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🎙 ", color = PurpleNeon, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = PurpleNeon, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("VOCAL PRESET SCANNER", color = TextPrimary, fontWeight = FontWeight.Bold)
                     }
@@ -123,285 +104,138 @@ fun VocalScannerScreen() {
         modifier = Modifier.testTag("vocal_scanner_screen")
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Drop Reference Song Zone
+            // Reference drop zone
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0x1FA855F7))
+                    border = BorderStroke(1.dp, PurpleNeon.copy(alpha = 0.35f))
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .clickable { if (!isScanning) runVocalScan() }
-                            .padding(24.dp),
+                            .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
                         if (isScanning) {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Scanning",
-                                tint = CyanNeon,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .rotate(rotationAngle)
+                                Icons.Default.Refresh, contentDescription = "Scanning",
+                                tint = CyanNeon, modifier = Modifier.size(52.dp).rotate(rotationAngle)
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("ANALYZING REFERENCE VOCAL PRINT...", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(modifier = Modifier.height(12.dp))
                             LinearProgressIndicator(
                                 progress = { scanProgress },
-                                modifier = Modifier
-                                    .fillMaxWidth(0.8f)
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = CyanNeon,
-                                trackColor = SurfaceSubtle,
+                                modifier = Modifier.fillMaxWidth(0.8f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                color = CyanNeon, trackColor = SurfaceSubtle
                             )
                         } else {
-                            Text(
-                                "⇪",
-                                color = PurpleNeon,
-                                fontSize = 48.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text("⬆", color = PurpleNeon, fontSize = 44.sp, fontWeight = FontWeight.Black)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = if (isScanComplete) "REFERENCE ANALYSIS COMPLETE! TAP TO RESCAN" else "DRAG & DROP REFERENCE SONG HERE",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                if (isScanComplete) "✓ ANALYSIS COMPLETE — TAP TO RESCAN" else "DROP REFERENCE TRACK HERE",
+                                color = if (isScanComplete) GreenActive else TextPrimary,
+                                fontWeight = FontWeight.Bold, fontSize = 14.sp
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Analyze EQ, Dynamics, Tuning speed, and Reverb space from any MP3/WAV reference.",
-                                color = TextSecondary,
-                                fontSize = 11.sp,
-                                textAlign = TextAlign.Center
+                                "Analyzes EQ curve, dynamics, tuning speed, and reverb space from any MP3/WAV.",
+                                color = TextSecondary, fontSize = 11.sp, textAlign = TextAlign.Center
                             )
                         }
                     }
                 }
             }
 
-            // Mode Selection
+            // Mode selector
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val modes = listOf("Match Closely", "Fit My Voice", "Blend Styles")
-                    modes.forEach { mode ->
-                        val isSelected = selectedMode == mode
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Match Closely", "Fit My Voice", "Blend Styles").forEach { mode ->
+                        val sel = mode == selectedMode
                         Box(
-                            modifier = Modifier
-                                .weight(1f)
+                            modifier = Modifier.weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (isSelected) PurpleNeon else SurfaceDark)
-                                .border(BorderStroke(1.dp, if (isSelected) Color.White.copy(alpha = 0.3f) else Color(0x1F8B5CF6)), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    selectedMode = mode
-                                    if (isScanComplete) {
-                                        // Re-apply configurations
-                                        runVocalScan()
-                                    }
-                                }
+                                .background(if (sel) PurpleNeon else SurfaceDark)
+                                .border(BorderStroke(1.dp, if (sel) Color.White.copy(0.25f) else Color(0x1F8B5CF6)), RoundedCornerShape(10.dp))
+                                .clickable { selectedMode = mode; if (isScanComplete) runVocalScan() }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = mode,
-                                color = if (isSelected) Color.White else TextSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text(mode, color = if (sel) Color.White else TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                         }
                     }
                 }
             }
 
-            // Plugin Chain Blocks
-            item {
-                Text(
-                    text = "SUGGESTED PLUGIN CHAIN SETTINGS",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                )
-            }
+            // Plugin chain
+            item { Text("SUGGESTED PLUGIN CHAIN", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
 
-            // Auto-tune Block
             item {
-                PluginControlCard(
-                    title = "Vocal Pitch correction (Auto-Tune)",
-                    active = true,
-                    tint = CyanNeon
-                ) {
+                PluginControlCard("Vocal Pitch Correction (Auto-Tune)", tint = CyanNeon) {
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Retune Speed", color = TextSecondary, fontSize = 12.sp)
                             Text("${autoTuneSpeed.toInt()} ms", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         }
-                        Slider(
-                            value = autoTuneSpeed,
-                            onValueChange = { autoTuneSpeed = it },
-                            valueRange = 0f..100f,
-                            colors = SliderDefaults.colors(activeTrackColor = CyanNeon, thumbColor = CyanNeon, inactiveTrackColor = SurfaceSubtle)
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Correction Scale: Chromatic", color = TextSecondary, fontSize = 11.sp)
-                            Text("Correction Humanize: 45%", color = TextSecondary, fontSize = 11.sp)
-                        }
+                        Slider(value = autoTuneSpeed, onValueChange = { autoTuneSpeed = it }, valueRange = 0f..100f,
+                            colors = SliderDefaults.colors(activeTrackColor = CyanNeon, thumbColor = CyanNeon, inactiveTrackColor = SurfaceSubtle))
                     }
                 }
             }
 
-            // EQ Block
             item {
-                PluginControlCard(
-                    title = "Suggested EQ Blueprint",
-                    active = true,
-                    tint = PurpleNeon
-                ) {
+                PluginControlCard("EQ Blueprint", tint = PurpleNeon) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        BlueprintSlider("Low Pass/Shelf", eqLow, -12f, 12f) { eqLow = it }
-                        BlueprintSlider("Presence Mid Boost", eqMid, -12f, 12f) { eqMid = it }
-                        BlueprintSlider("Air High Shelf", eqHigh, -12f, 12f) { eqHigh = it }
+                        BlueprintSlider("Low Shelf", eqLow, -12f, 12f, tint = PurpleNeon) { eqLow = it }
+                        BlueprintSlider("Presence Mid", eqMid, -12f, 12f, tint = PurpleNeon) { eqMid = it }
+                        BlueprintSlider("Air High", eqHigh, -12f, 12f, tint = PurpleNeon) { eqHigh = it }
                     }
                 }
             }
 
-            // Dynamic Compressor Block
             item {
-                PluginControlCard(
-                    title = "Opto Tube Compressor",
-                    active = true,
-                    tint = MagentaNeon
-                ) {
+                PluginControlCard("Opto Compressor", tint = MagentaNeon) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Threshold", color = TextSecondary, fontSize = 12.sp)
-                            Text("${compThreshold.toInt()} dB", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        }
-                        Slider(
-                            value = compThreshold,
-                            onValueChange = { compThreshold = it },
-                            valueRange = -48f..0f,
-                            colors = SliderDefaults.colors(activeTrackColor = MagentaNeon, thumbColor = MagentaNeon, inactiveTrackColor = SurfaceSubtle)
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Ratio", color = TextSecondary, fontSize = 12.sp)
-                            Text("${String.format("%.1f", compRatio)}:1", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        }
-                        Slider(
-                            value = compRatio,
-                            onValueChange = { compRatio = it },
-                            valueRange = 1f..10f,
-                            colors = SliderDefaults.colors(activeTrackColor = MagentaNeon, thumbColor = MagentaNeon, inactiveTrackColor = SurfaceSubtle)
-                        )
+                        BlueprintSlider("Threshold", compThreshold, -48f, 0f, "dBFS", MagentaNeon) { compThreshold = it }
+                        BlueprintSlider("Ratio", compRatio, 1f, 12f, ":1", MagentaNeon) { compRatio = it }
                     }
                 }
             }
 
-            // Spatial FX Block
             item {
-                PluginControlCard(
-                    title = "Vocal Space (Plate Reverb & Delay)",
-                    active = true,
-                    tint = GreenActive
-                ) {
+                PluginControlCard("Plate Reverb & Delay", tint = GreenActive) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Reverb Send Mix", color = TextSecondary, fontSize = 12.sp)
-                            Text("${reverbMix.toInt()}%", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        BlueprintSlider("Reverb Send", reverbMix, 0f, 100f, "%", GreenActive) { reverbMix = it }
+                        BlueprintSlider("Delay Feedback", delayFeedback, 0f, 100f, "%", GreenActive) { delayFeedback = it }
+                    }
+                }
+            }
+
+            // Apply preset summary
+            item {
+                AnimatedVisibility(visible = isScanComplete) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, GreenActive.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("✓ PRESET APPLIED: ${selectedMode.uppercase()}", color = GreenActive, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("AutoTune ${autoTuneSpeed.toInt()}ms • EQ ${eqLow>0?"+":""}${String.format("%.1f",eqLow)}/${eqMid>0?"+":""}${String.format("%.1f",eqMid)}/${eqHigh>0?"+":""}${String.format("%.1f",eqHigh)} dB • Comp ${compThreshold.toInt()}dBFS ${String.format("%.1f",compRatio)}:1 • Rev ${reverbMix.toInt()}%",
+                                color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace
+                            )
                         }
-                        Slider(
-                            value = reverbMix,
-                            onValueChange = { reverbMix = it },
-                            valueRange = 0f..100f,
-                            colors = SliderDefaults.colors(activeTrackColor = GreenActive, thumbColor = GreenActive, inactiveTrackColor = SurfaceSubtle)
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Delay Feedback", color = TextSecondary, fontSize = 12.sp)
-                            Text("${delayFeedback.toInt()}%", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        }
-                        Slider(
-                            value = delayFeedback,
-                            onValueChange = { delayFeedback = it },
-                            valueRange = 0f..100f,
-                            colors = SliderDefaults.colors(activeTrackColor = GreenActive, thumbColor = GreenActive, inactiveTrackColor = SurfaceSubtle)
-                        )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun PluginControlCard(
-    title: String,
-    active: Boolean,
-    tint: Color,
-    content: @Composable () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-        border = BorderStroke(1.dp, Color(0x1F8B5CF6)),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(tint))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
-                Switch(
-                    checked = active,
-                    onCheckedChange = {},
-                    colors = SwitchDefaults.colors(checkedThumbColor = tint, checkedTrackColor = tint.copy(alpha = 0.3f))
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun BlueprintSlider(label: String, value: Float, min: Float, max: Float, onValueChange: (Float) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = TextSecondary, fontSize = 11.sp, modifier = Modifier.width(120.dp))
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = min..max,
-            colors = SliderDefaults.colors(activeTrackColor = PurpleNeon, thumbColor = PurpleNeon, inactiveTrackColor = SurfaceSubtle),
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = String.format("%+.1fdB", value),
-            color = TextPrimary,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(60.dp),
-            textAlign = TextAlign.End
-        )
     }
 }
