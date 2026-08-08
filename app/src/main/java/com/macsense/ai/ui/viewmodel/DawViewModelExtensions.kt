@@ -1,32 +1,21 @@
 package com.macsense.ai.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.macsense.ai.data.repository.MacSenseRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.macsense.ai.audio.StemTrack
+import com.macsense.ai.data.local.ClipEntity
 
 /**
- * Extension functions on [DawViewModel] that wire [UndoRedoManager] into the existing
- * mutation API without modifying the large DawViewModel source file.
+ * Extension functions on [DawViewModel] wiring [UndoRedoManager] into the mutation API
+ * without modifying the large DawViewModel source file.
  *
- * Call these from the UI instead of (or in addition to) the base mutation functions to
- * preserve undo/redo history. Example:
+ * DawViewModel exposes internal setters via the `restoreXxx` / `updateBpm` package-level
+ * functions below. The `WeakHashMap` pattern gives each VM its own UndoRedoManager
+ * while letting it be GC'd with the VM itself.
  *
- *   // In a composable toolbar
+ * UI usage:
  *   val canUndo by viewModel.undoRedoManager.canUndo.collectAsState()
  *   val canRedo by viewModel.undoRedoManager.canRedo.collectAsState()
  *   IconButton(onClick = { viewModel.undoLastAction() }, enabled = canUndo) { ... }
  *   IconButton(onClick = { viewModel.redoLastAction() }, enabled = canRedo) { ... }
- */
-
-/**
- * The shared [UndoRedoManager] instance for a [DawViewModel].
- *
- * Lazily created per-VM instance. The autosave trigger persists the current
- * project state to Room after 500 ms of inactivity following any mutation.
  */
 private val vmUndoManagers = java.util.WeakHashMap<DawViewModel, UndoRedoManager>()
 
@@ -35,14 +24,9 @@ val DawViewModel.undoRedoManager: UndoRedoManager
         UndoRedoManager(
             maxHistory = 50,
             autosaveTrigger = {
-                // Trigger project autosave via the existing repository path.
-                // This is a best-effort save; failures are logged not thrown.
-                try {
-                    autosaveCurrentProject()
-                } catch (t: Throwable) {
+                try { refreshAllSectionClips() } catch (t: Throwable) {
                     com.macsense.ai.telemetry.AppLogger.w(
-                        "UndoRedoManager",
-                        "Autosave failed (non-fatal): ${t.message}"
+                        "UndoRedo", "Autosave no-op: ${t.message}"
                     )
                 }
             },
@@ -51,12 +35,8 @@ val DawViewModel.undoRedoManager: UndoRedoManager
     }
 
 /**
- * Captures a snapshot of sections + clips before a mutation, pushes it onto the
- * undo stack, then invokes [mutate]. This is the canonical way to make any
- * section/clip change undoable.
- *
- * Example:
- *   viewModel.recordableAction("Section rename") { updateSectionName(id, name) }
+ * Wraps any mutation in an undo-able snapshot:
+ *   viewModel.recordableAction("Rename section") { updateSectionName(id, name) }
  */
 fun DawViewModel.recordableAction(description: String, mutate: DawViewModel.() -> Unit) {
     val before = UndoState.CompositeSnapshot(
@@ -70,59 +50,36 @@ fun DawViewModel.recordableAction(description: String, mutate: DawViewModel.() -
     mutate()
 }
 
-/**
- * Undoes the last recorded action, restoring section/clip/stem/bpm state.
- * No-op if there is nothing to undo.
- */
+/** Restores the previous recorded state. No-op if nothing to undo. */
 fun DawViewModel.undoLastAction() {
-    val current = UndoState.CompositeSnapshot(
-        sections = sections.value,
-        clipsBySection = clipsBySection.value,
-        stems = stemTracks.value,
-        bpm = bpm.value,
-        description = "current"
-    )
+    val current = currentComposite("current")
     val prev = undoRedoManager.undo(current) ?: return
     applyUndoState(prev)
 }
 
-/**
- * Re-applies the last undone action.
- * No-op if there is nothing to redo.
- */
+/** Re-applies the last undone action. No-op if nothing to redo. */
 fun DawViewModel.redoLastAction() {
-    val current = UndoState.CompositeSnapshot(
-        sections = sections.value,
-        clipsBySection = clipsBySection.value,
-        stems = stemTracks.value,
-        bpm = bpm.value,
-        description = "current"
-    )
+    val current = currentComposite("current")
     val next = undoRedoManager.redo(current) ?: return
     applyUndoState(next)
 }
 
-/**
- * Internal: applies a restored [UndoState] back into the ViewModel's state flows
- * and re-persists clips to Room where a repository is wired.
- */
-private fun DawViewModel.applyUndoState(state: UndoState) {
+private fun DawViewModel.currentComposite(desc: String) = UndoState.CompositeSnapshot(
+    sections = sections.value,
+    clipsBySection = clipsBySection.value,
+    stems = stemTracks.value,
+    bpm = bpm.value,
+    description = desc
+)
+
+/** Applies any [UndoState] variant back into the ViewModel's public mutators. */
+fun DawViewModel.applyUndoState(state: UndoState) {
     when (state) {
-        is UndoState.SectionSnapshot -> {
-            restoreSections(state.sections)
-        }
-        is UndoState.ClipSnapshot -> {
-            restoreClips(state.clipsBySection)
-        }
-        is UndoState.StemSnapshot -> {
-            restoreStems(state.stems)
-        }
-        is UndoState.BpmSnapshot -> {
-            updateBpm(state.bpm)
-        }
-        is UndoState.LoopSnapshot -> {
-            restoreLoopRegion(state.loopRegion)
-        }
+        is UndoState.SectionSnapshot -> restoreSections(state.sections)
+        is UndoState.ClipSnapshot -> restoreClips(state.clipsBySection)
+        is UndoState.StemSnapshot -> restoreStems(state.stems)
+        is UndoState.BpmSnapshot -> updateBpm(state.bpm)
+        is UndoState.LoopSnapshot -> restoreLoopRegion(state.loopRegion)
         is UndoState.CompositeSnapshot -> {
             restoreSections(state.sections)
             restoreClips(state.clipsBySection)
@@ -130,17 +87,4 @@ private fun DawViewModel.applyUndoState(state: UndoState) {
             updateBpm(state.bpm)
         }
     }
-}
-
-/**
- * Convenience: autosave the current in-memory project state to Room.
- * Delegates to the repository via viewModelScope if one is wired.
- */
-private suspend fun DawViewModel.autosaveCurrentProject() {
-    // DawViewModel exposes its sections/clips/bpm via public StateFlows;
-    // the repository upsert path is already available via upsertClip() etc.
-    // This hook is intentionally lightweight — the full project-level autosave
-    // (ProjectEntity) is handled by the sync layer; here we only ensure the
-    // in-memory mutation doesn’t outrun Room by triggering a refresh pass.
-    refreshAllSectionClips()
 }
