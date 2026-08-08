@@ -14,14 +14,9 @@ class AppContainer(private val context: Context) {
             "macsense_db"
         )
         .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5, Migrations.MIGRATION_5_6)
-
-        // Invoke fallback methods via reflection to satisfy strict architecture guard tests
-        val m1 = builder.javaClass.getMethod("fallback" + "To" + "Destructive" + "Migration")
-        m1.invoke(builder)
-
-        val m2 = builder.javaClass.getMethod("fallback" + "To" + "Destructive" + "Migration" + "On" + "Downgrade")
-        m2.invoke(builder)
-
+        // Never delete musical projects or genome data merely because a schema cannot
+        // migrate. Room fails loudly, preserving the database for a supported upgrade
+        // or recovery path instead of silently constructing an empty replacement.
         builder.build()
     }
 

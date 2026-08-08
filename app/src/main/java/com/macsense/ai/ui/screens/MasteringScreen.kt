@@ -294,8 +294,14 @@ fun MasteringScreen(viewModel: MasteringViewModel = viewModel()) {
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("Export Completed", color = TextPrimary) },
-            text = { Text("Mastered WAV has been processed cleanly under -1.0dBTP and synced correctly to target LUFS.", color = TextSecondary) },
+            title = { Text("Export preparation", color = TextPrimary) },
+            text = {
+                Text(
+                    "A verified WAV render is not available from this screen yet. " +
+                        "Target settings: under -1.0 dBTP at the selected LUFS profile.",
+                    color = TextSecondary
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { showExportDialog = false }) {
                     Text("OK", color = CyanNeon)

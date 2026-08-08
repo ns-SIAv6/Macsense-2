@@ -20,8 +20,9 @@ class AriLyricEditingService {
         val validation = StartupValidator.validateGeminiKey(apiKey)
 
         if (!validation.isGeminiKeyConfigured) {
-            AppLogger.i("AriLyricEditingService", "GEMINI_API_KEY is not configured. Running offline generator.")
-            return generateOfflineEdit(selectedText, action, artistIdentity)
+            AppLogger.i("AriLyricEditingService", "GEMINI_API_KEY is not configured. Running deterministic local edit.")
+            return "[Local automation — no cloud AI response] " +
+                generateOfflineEdit(selectedText, action, artistIdentity)
         }
 
         return try {
@@ -49,19 +50,21 @@ class AriLyricEditingService {
 
             AppLogger.i("AriLyricEditingService", "Sending lyric edit request to Gemini (action=$action, identity=$artistIdentity)")
             val response = withGeminiRetry {
-                RetrofitClient.service.generateContent(apiKey, request)
+                RetrofitClient.service.generateContent(ModelTier.CREATIVE.modelName, apiKey, request)
             }
 
             val result = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
             if (result.isNullOrEmpty()) {
                 AppLogger.w("AriLyricEditingService", "Received empty response from Gemini, falling back to offline.")
-                generateOfflineEdit(selectedText, action, artistIdentity)
+                "[Local automation — no cloud AI response] " +
+                    generateOfflineEdit(selectedText, action, artistIdentity)
             } else {
                 result
             }
         } catch (e: Exception) {
             AppLogger.e("AriLyricEditingService", "Failed online lyric edit, falling back to offline.", e)
-            generateOfflineEdit(selectedText, action, artistIdentity)
+            "[Local automation — no cloud AI response] " +
+                generateOfflineEdit(selectedText, action, artistIdentity)
         }
     }
 

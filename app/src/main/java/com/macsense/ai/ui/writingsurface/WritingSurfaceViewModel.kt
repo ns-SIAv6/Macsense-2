@@ -211,7 +211,7 @@ class WritingSurfaceViewModel(
                     )
 
                     val response = withGeminiRetry {
-                        RetrofitClient.service.generateContent(key, request)
+                        RetrofitClient.service.generateContent(ModelTier.CREATIVE.modelName, key, request)
                     }
                     val reply = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                         ?: "my brain is fuzzing out. ask again, rookie."
@@ -224,7 +224,7 @@ class WritingSurfaceViewModel(
                     }
                 } catch (e: Exception) {
                     delay(500)
-                    val fallback = "cloud pipeline glitched. offline backup here: " + generateOfflineAriReply(userText)
+                    val fallback = "[Local automation — no cloud AI response] " + generateOfflineAriReply(userText)
                     withContext(Dispatchers.Main) {
                         val updatedLog = _chatLog.value.toMutableList()
                         updatedLog.add(ChatMessage("assistant", fallback))

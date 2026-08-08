@@ -2,16 +2,36 @@ package com.macsense.ai.api
 
 enum class ModelTier(val modelName: String, val endpointUrl: String) {
     FAST(
-        modelName = "gemini-3.5-flash",
-        endpointUrl = "v1beta/models/gemini-3.5-flash:generateContent"
+        // Kept to a documented Gemini API model ID. The request path is constructed
+        // at call time from this value so the routing decision is never decorative.
+        modelName = "gemini-2.0-flash",
+        endpointUrl = "v1beta/models/gemini-2.0-flash:generateContent"
     ),
     CREATIVE(
-        modelName = "gemini-3.5-pro",
-        endpointUrl = "v1beta/models/gemini-3.5-pro:generateContent"
+        modelName = "gemini-2.0-flash",
+        endpointUrl = "v1beta/models/gemini-2.0-flash:generateContent"
     )
 }
 
 object AriModelRouter {
+
+    /**
+     * Choose the request tier before an AI response exists. This is intentionally
+     * heuristic-only: it controls resource selection, not command authorization.
+     * Any returned command is still parsed and handled after the response arrives.
+     */
+    fun routePrompt(prompt: String?): ModelTier {
+        val normalized = prompt?.lowercase()?.trim().orEmpty()
+        if (normalized.isEmpty()) return ModelTier.FAST
+        return when {
+            listOf(
+                "lyric", "rewrite", "verse", "hook", "chorus", "songwrite",
+                "breed", "genome", "genetic", "resurrect", "revive",
+                "arrange", "structure", "reorder"
+            ).any(normalized::contains) -> ModelTier.CREATIVE
+            else -> ModelTier.FAST
+        }
+    }
 
     fun routeTier(commandType: String?): ModelTier {
         if (commandType == null) return ModelTier.FAST

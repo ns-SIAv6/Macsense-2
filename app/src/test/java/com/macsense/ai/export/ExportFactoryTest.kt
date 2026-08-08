@@ -15,20 +15,15 @@ class ExportFactoryTest {
     )
 
     @Test
-    fun `createBatch generates all 10 export formats`() {
+    fun `createBatch generates only formats backed by a verified WAV renderer`() {
         val jobs = ExportFactory.createBatch("proj-1", "Test Track", "take-1", makeTestGenome(), 180.0)
-        assertEquals(10, jobs.size)
+        assertEquals(5, jobs.size)
         val formats = jobs.map { it.format }.toSet()
         assertTrue(formats.contains(ExportFormat.FULL_MIX))
-        assertTrue(formats.contains(ExportFormat.INSTRUMENTAL))
-        assertTrue(formats.contains(ExportFormat.ACAPELLA))
-        assertTrue(formats.contains(ExportFormat.STEMS_ZIP))
         assertTrue(formats.contains(ExportFormat.TIKTOK_15S))
         assertTrue(formats.contains(ExportFormat.INSTAGRAM_30S))
         assertTrue(formats.contains(ExportFormat.SLOWED_REVERB))
         assertTrue(formats.contains(ExportFormat.SPED_UP))
-        assertTrue(formats.contains(ExportFormat.AAC_320))
-        assertTrue(formats.contains(ExportFormat.MP3_320))
     }
 
     @Test
@@ -81,16 +76,16 @@ class ExportFactoryTest {
         val spedUp = jobs.find { it.format == ExportFormat.SPED_UP }!!
         assertNotNull(spedUp.tempoModulation)
         assertEquals(1.25, spedUp.tempoModulation!!.speedFactor, 0.001)
-        assertTrue(spedUp.tempoModulation!!.preservePitch)
+        assertFalse(spedUp.tempoModulation!!.preservePitch)
     }
 
     @Test
-    fun `createBatch excludes vocal stems from instrumental`() {
+    fun `createBatch does not advertise unimplemented stem separation`() {
         val jobs = ExportFactory.createBatch("proj-1", "Test", "take-1", trackDurationSeconds = 180.0)
-        val instrumental = jobs.find { it.format == ExportFormat.INSTRUMENTAL }!!
-        assertTrue(instrumental.excludeStems.contains("Vocal/Adlib"))
-        val acapella = jobs.find { it.format == ExportFormat.ACAPELLA }!!
-        assertTrue(acapella.includeStems?.contains("Vocal/Adlib") == true)
+        assertFalse(jobs.any { it.format == ExportFormat.INSTRUMENTAL })
+        assertFalse(jobs.any { it.format == ExportFormat.ACAPELLA })
+        assertFalse(jobs.any { it.format == ExportFormat.STEMS_ZIP })
+        assertFalse(jobs.any { it.format == ExportFormat.AAC_320 || it.format == ExportFormat.MP3_320 })
     }
 
     @Test

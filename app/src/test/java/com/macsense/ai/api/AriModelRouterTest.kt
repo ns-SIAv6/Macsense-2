@@ -56,6 +56,15 @@ class AriModelRouterTest {
     }
 
     @Test
+    fun `routes creative prompts before a response command exists`() {
+        assertEquals(ModelTier.CREATIVE, AriModelRouter.routePrompt("rewrite my chorus with more tension"))
+        assertEquals(ModelTier.CREATIVE, AriModelRouter.routePrompt("breed these two sound genomes"))
+        assertEquals(ModelTier.CREATIVE, AriModelRouter.routePrompt("reorder the song structure"))
+        assertEquals(ModelTier.FAST, AriModelRouter.routePrompt("raise the BPM to 132"))
+        assertEquals(ModelTier.FAST, AriModelRouter.routePrompt(null))
+    }
+
+    @Test
     fun `model tier enum provides correct endpoint url`() {
         assertTrue(ModelTier.FAST.endpointUrl.contains("flash"))
         assertTrue(ModelTier.CREATIVE.endpointUrl.contains("pro"))

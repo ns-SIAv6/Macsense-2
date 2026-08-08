@@ -18,7 +18,7 @@ function optionalEnv(name: string, fallback: string): string {
 export const config = {
   port: parseInt(optionalEnv("PORT", "8787"), 10),
   geminiApiKey: requireEnv("GEMINI_API_KEY"),
-  geminiModel: optionalEnv("GEMINI_MODEL", "gemini-3.5-flash"),
+  geminiModel: optionalEnv("GEMINI_MODEL", "gemini-2.0-flash"),
   corsOrigins: optionalEnv("CORS_ORIGINS", "")
     .split(",")
     .map((s) => s.trim())
