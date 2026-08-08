@@ -8,6 +8,7 @@ import com.macsense.ai.api.Content as ApiContent
 import com.macsense.ai.api.Part
 import com.macsense.ai.api.AriCommand
 import com.macsense.ai.api.AriCommandParser
+import com.macsense.ai.api.AriModelRouter
 import com.macsense.ai.api.withGeminiRetry
 import com.macsense.ai.telemetry.AppLogger
 import com.macsense.ai.telemetry.StartupValidator
@@ -875,7 +876,7 @@ class DawViewModel(
                 val (reply, cmd) = generateOfflineAriResponse(userText)
                 launch(Dispatchers.Main) {
                     val finalLog = _ariChatLog.value.toMutableList()
-                    finalLog.add(ChatMessage("assistant", reply, cmd))
+                    finalLog.add(ChatMessage("assistant", "$LOCAL_AUTOMATION_PREFIX$reply", cmd))
                     _ariChatLog.value = finalLog
                     _isAriTyping.value = false
                 }
@@ -910,7 +911,11 @@ class DawViewModel(
 
                     AppLogger.i("DawViewModel", "Sending Ari request (historyLength=${historyToInclude.size})")
                     val response = withGeminiRetry {
-                        RetrofitClient.service.generateContent(key, request)
+                        RetrofitClient.service.generateContent(
+                            AriModelRouter.routePrompt(userText).modelName,
+                            key,
+                            request,
+                        )
                     }
                     val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text 
                         ?: "my brain is fuzzing out right now. ask again, rookie."
@@ -928,10 +933,9 @@ class DawViewModel(
                     AppLogger.e("DawViewModel", "Ari cloud pipeline failed, falling back to offline brain", e)
                     delay(1000)
                     val (reply, cmd) = generateOfflineAriResponse(userText)
-                    val errReply = "[Ari cloud pipeline failed: ${e.localizedMessage}. falling back to local brain.]\n\n$reply"
                     launch(Dispatchers.Main) {
                         val finalLog = _ariChatLog.value.toMutableList()
-                        finalLog.add(ChatMessage("assistant", errReply, cmd))
+                        finalLog.add(ChatMessage("assistant", "$LOCAL_AUTOMATION_PREFIX$reply", cmd))
                         _ariChatLog.value = finalLog
                         _isAriTyping.value = false
                     }
@@ -1127,7 +1131,8 @@ class DawViewModel(
 
     private fun generateOfflineAriResponse(userText: String): Pair<String, AriCommand?> {
         val textLower = userText.lowercase()
-        val warning = "[ARI LOCAL BRAIN: configure GEMINI_API_KEY in the secrets panel for live cloud processing!]\n\n"
+        val warning =
+            "[Local automation — no cloud AI response. Configure GEMINI_API_KEY for cloud responses.]\n\n"
         
         return when {
             textLower.contains("bpm") || textLower.contains("speed") || textLower.contains("tempo") || textLower.contains("fast") || textLower.contains("slow") -> {
@@ -1204,6 +1209,11 @@ class DawViewModel(
                 Pair(text, null)
             }
         }
+    }
+
+    private companion object {
+        const val LOCAL_AUTOMATION_PREFIX =
+            "[Local automation — no cloud AI response] "
     }
 }
 

@@ -11,6 +11,10 @@ import androidx.work.workDataOf
 import com.macsense.ai.audio.PcmFileStore
 import com.macsense.ai.telemetry.AppLogger
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class ExportWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     companion object {
@@ -63,6 +67,14 @@ class ExportWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
         val outputFileName = inputData.getString(KEY_OUTPUT_FILE) ?: return Result.failure()
         val sourceTakeId = inputData.getString(KEY_SOURCE_TAKE) ?: return Result.failure()
         val format = runCatching { ExportFormat.valueOf(formatName) }.getOrNull() ?: return Result.failure()
+        if (!outputFileName.endsWith(".${format.fileExtension}", ignoreCase = true)) {
+            return Result.failure(
+                workDataOf(
+                    "error" to "Export filename does not match ${format.displayName}: $outputFileName",
+                    "format" to format.name,
+                )
+            )
+        }
         AppLogger.i("ExportWorker", "Starting job $jobId: ${format.displayName} -> $outputFileName")
         return try {
             val context = applicationContext
@@ -76,7 +88,11 @@ class ExportWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
             val store = PcmFileStore()
             val samples = store.load(sourceFile.absolutePath)
             val output = when (format) {
-                ExportFormat.FULL_MIX, ExportFormat.INSTRUMENTAL, ExportFormat.ACAPELLA, ExportFormat.STEMS_ZIP, ExportFormat.AAC_320, ExportFormat.MP3_320 -> samples
+                ExportFormat.FULL_MIX -> samples
+                ExportFormat.INSTRUMENTAL, ExportFormat.ACAPELLA, ExportFormat.STEMS_ZIP,
+                ExportFormat.AAC_320, ExportFormat.MP3_320 -> {
+                    return unsupported(format, "This build has no verified stem-separation, ZIP, AAC, or MP3 encoder.")
+                }
                 ExportFormat.TIKTOK_15S, ExportFormat.INSTAGRAM_30S -> {
                     val start = inputData.getDouble(KEY_TIME_START, 0.0).takeIf { it >= 0 } ?: 0.0
                     val duration = inputData.getDouble(KEY_TIME_DURATION, 15.0).takeIf { it >= 0 } ?: 15.0
@@ -90,7 +106,7 @@ class ExportWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
                 }
             }
             val outputFile = File(exportsDir, outputFileName)
-            store.save(output, outputFile.absolutePath)
+            writeWav(output, outputFile)
             val soundDna = inputData.getString(KEY_SOUND_DNA)
             if (!soundDna.isNullOrEmpty()) {
                 File(exportsDir, "$outputFileName.dna").writeText(soundDna)
@@ -103,4 +119,42 @@ class ExportWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
             Result.failure(workDataOf("error" to (e.message ?: "Unknown error")))
         }
     }
+
+    private fun unsupported(format: ExportFormat, detail: String): Result {
+        val message = "${format.displayName} is unavailable: $detail"
+        AppLogger.w("ExportWorker", message)
+        return Result.failure(workDataOf("error" to message, "format" to format.name, "unsupported" to true))
+    }
+
+    /** Writes a real mono 16-bit PCM WAV file. The extension/format declaration can no longer lie. */
+    private fun writeWav(samples: DoubleArray, destination: File) {
+        require(destination.extension.equals("wav", ignoreCase = true)) {
+            "WAV writer cannot create a non-WAV file: ${destination.name}"
+        }
+        destination.parentFile?.mkdirs()
+        FileOutputStream(destination).use { output ->
+            val dataBytes = samples.size * 2
+            writeAscii(output, "RIFF")
+            writeLeInt(output, 36 + dataBytes)
+            writeAscii(output, "WAVEfmt ")
+            writeLeInt(output, 16)
+            writeLeShort(output, 1)
+            writeLeShort(output, 1)
+            writeLeInt(output, SAMPLE_RATE)
+            writeLeInt(output, SAMPLE_RATE * 2)
+            writeLeShort(output, 2)
+            writeLeShort(output, 16)
+            writeAscii(output, "data")
+            writeLeInt(output, dataBytes)
+            samples.forEach { sample ->
+                writeLeShort(output, (sample.coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt())
+            }
+        }
+    }
+
+    private fun writeAscii(output: OutputStream, value: String) = output.write(value.encodeToByteArray())
+    private fun writeLeInt(output: OutputStream, value: Int) =
+        output.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array())
+    private fun writeLeShort(output: OutputStream, value: Int) =
+        output.write(ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(value.toShort()).array())
 }

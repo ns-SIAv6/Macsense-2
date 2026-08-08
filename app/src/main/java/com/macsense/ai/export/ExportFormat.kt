@@ -11,7 +11,7 @@ enum class ExportFormat(val displayName: String, val fileExtension: String, val 
     TIKTOK_15S("TikTok Hook (15s)", "wav", "Most energetic 15 seconds for viral hooks"),
     INSTAGRAM_30S("Instagram Reel (30s)", "wav", "30-second preview optimized for reels"),
     SLOWED_REVERB("Slowed + Reverb", "wav", "Tempo reduced 15%, large reverb, ambient character"),
-    SPED_UP("Sped Up", "wav", "Tempo increased 25%, pitch preserved, TikTok sped-up trend"),
+    SPED_UP("Sped Up", "wav", "Tempo increased 25% by resampling (pitch changes)"),
     AAC_320("AAC 320kbps", "aac", "Compressed AAC at 320kbps for streaming"),
     MP3_320("MP3 320kbps", "mp3", "Compressed MP3 at 320kbps for compatibility");
 }

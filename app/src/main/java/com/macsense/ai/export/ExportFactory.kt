@@ -16,16 +16,16 @@ object ExportFactory {
         }
         val jobs = mutableListOf<ExportJob>()
         jobs += ExportJob(id = "${safeName}_full_mix", projectId = projectId, format = ExportFormat.FULL_MIX, outputFileName = "${safeName}_full_mix.wav", sourceTakeId = sourceTakeId, soundDna = soundDna)
-        jobs += ExportJob(id = "${safeName}_instrumental", projectId = projectId, format = ExportFormat.INSTRUMENTAL, outputFileName = "${safeName}_instrumental.wav", sourceTakeId = sourceTakeId, excludeStems = VOCAL_LANES)
-        jobs += ExportJob(id = "${safeName}_acapella", projectId = projectId, format = ExportFormat.ACAPELLA, outputFileName = "${safeName}_acapella.wav", sourceTakeId = sourceTakeId, includeStems = VOCAL_LANES)
+        // Stem-dependent formats, ZIP, AAC, and MP3 are intentionally omitted until
+        // real renderers/encoders are bundled. ExportWorker also rejects direct jobs for
+        // them, preventing a caller from creating mislabeled PCM files.
         val hookStart = findMostEnergeticWindow(trackDurationSeconds)
         jobs += ExportJob(id = "${safeName}_tiktok", projectId = projectId, format = ExportFormat.TIKTOK_15S, outputFileName = "${safeName}_tiktok_15s.wav", sourceTakeId = sourceTakeId, timeConstraint = TimeConstraint(hookStart, 15.0), soundDna = soundDna)
         jobs += ExportJob(id = "${safeName}_instagram", projectId = projectId, format = ExportFormat.INSTAGRAM_30S, outputFileName = "${safeName}_instagram_30s.wav", sourceTakeId = sourceTakeId, timeConstraint = TimeConstraint(hookStart, 30.0))
         jobs += ExportJob(id = "${safeName}_slowed", projectId = projectId, format = ExportFormat.SLOWED_REVERB, outputFileName = "${safeName}_slowed_reverb.wav", sourceTakeId = sourceTakeId, tempoModulation = TempoModulation(0.85, false, 0.6), soundDna = soundDna)
-        jobs += ExportJob(id = "${safeName}_sped_up", projectId = projectId, format = ExportFormat.SPED_UP, outputFileName = "${safeName}_sped_up.wav", sourceTakeId = sourceTakeId, tempoModulation = TempoModulation(1.25, true), soundDna = soundDna)
-        jobs += ExportJob(id = "${safeName}_stems", projectId = projectId, format = ExportFormat.STEMS_ZIP, outputFileName = "${safeName}_stems.zip", sourceTakeId = sourceTakeId)
-        jobs += ExportJob(id = "${safeName}_aac", projectId = projectId, format = ExportFormat.AAC_320, outputFileName = "${safeName}_aac.aac", sourceTakeId = sourceTakeId)
-        jobs += ExportJob(id = "${safeName}_mp3", projectId = projectId, format = ExportFormat.MP3_320, outputFileName = "${safeName}_mp3.mp3", sourceTakeId = sourceTakeId)
+        // The current renderer uses resampling, which changes pitch. Do not claim
+        // pitch preservation until a real time-stretch processor is bundled.
+        jobs += ExportJob(id = "${safeName}_sped_up", projectId = projectId, format = ExportFormat.SPED_UP, outputFileName = "${safeName}_sped_up.wav", sourceTakeId = sourceTakeId, tempoModulation = TempoModulation(1.25, false), soundDna = soundDna)
         return jobs
     }
 

@@ -158,7 +158,7 @@ fun FlowCaptureScreen(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {
                                 Text("Auto-Align To Project BPM", color = TextPrimary, fontSize = 13.sp)
-                                Text("Keeps natural performance timing synced perfectly", color = TextSecondary, fontSize = 11.sp)
+                                Text("Preserves captured performance timing for review", color = TextSecondary, fontSize = 11.sp)
                             }
                             Switch(checked = autoAlignToBeat, onCheckedChange = { viewModel.setAutoAlignEnabled(it) }, colors = SwitchDefaults.colors(checkedThumbColor = CyanNeon, checkedTrackColor = CyanNeon.copy(alpha = 0.3f)))
                         }

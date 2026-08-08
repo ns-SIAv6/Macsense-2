@@ -12,6 +12,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.Header
+import retrofit2.http.Path
 import retrofit2.http.POST
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -55,8 +56,9 @@ interface GeminiApiService {
     // The API key is now sent as a request header (x-goog-api-key) instead of a URL query
     // parameter. Query parameters are logged by proxies, CDNs, and server access logs far
     // more often than headers, so this meaningfully reduces the chance of key exposure.
-    @POST("v1beta/models/gemini-3.5-flash:generateContent")
+    @POST("v1beta/models/{model}:generateContent")
     suspend fun generateContent(
+        @Path("model") model: String,
         @Header("x-goog-api-key") apiKey: String,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse

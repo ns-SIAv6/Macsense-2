@@ -47,11 +47,12 @@ class GeminiApiServiceTest {
                 """{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]}}]}"""
             ).setResponseCode(200)
         )
-        service.generateContent("secret-key-value", GenerateContentRequest(contents = emptyList()))
+        service.generateContent("gemini-2.0-flash", "secret-key-value", GenerateContentRequest(contents = emptyList()))
         val recorded = server.takeRequest()
         assertEquals("secret-key-value", recorded.getHeader("x-goog-api-key"))
         assertTrue(!recorded.path!!.contains("secret-key-value"))
         assertTrue(!recorded.path!!.contains("key="))
+        assertEquals("/v1beta/models/gemini-2.0-flash:generateContent", recorded.path)
     }
 
     @Test
@@ -61,7 +62,7 @@ class GeminiApiServiceTest {
                 """{"candidates":[{"content":{"role":"model","parts":[{"text":"vision applied"}]}}]}"""
             ).setResponseCode(200)
         )
-        val response = service.generateContent("k", GenerateContentRequest(contents = emptyList()))
+        val response = service.generateContent("gemini-2.0-flash", "k", GenerateContentRequest(contents = emptyList()))
         assertNotNull(response.candidates)
         assertEquals("vision applied", response.candidates!!.first().content?.parts?.firstOrNull()?.text)
     }
@@ -69,7 +70,7 @@ class GeminiApiServiceTest {
     @Test
     fun `handles response with empty candidates list`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"candidates":[]}""").setResponseCode(200))
-        val response = service.generateContent("k", GenerateContentRequest(contents = emptyList()))
+        val response = service.generateContent("gemini-2.0-flash", "k", GenerateContentRequest(contents = emptyList()))
         assertNotNull(response.candidates)
         assertTrue(response.candidates!!.isEmpty())
     }
@@ -81,7 +82,7 @@ class GeminiApiServiceTest {
             contents = listOf(Content(role = "user", parts = listOf(Part(text = "yo ari")))),
             systemInstruction = Content(parts = listOf(Part(text = "system prompt")))
         )
-        service.generateContent("k", request)
+        service.generateContent("gemini-2.0-flash", "k", request)
         val recorded = server.takeRequest()
         val body = recorded.body.readUtf8()
         assertTrue(body.contains("yo ari"))

@@ -75,7 +75,8 @@ If `MACSENSE_CLIENT_TOKEN` is set in `.env`, add:
 
 ## Environment variables
 
-See `.env.example`. Required: `GEMINI_API_KEY`. Everything else has a safe default.
+See `.env.example`. Required: `GEMINI_API_KEY`. Everything else has a safe default. The default
+model is `gemini-2.0-flash`; do not configure obsolete `gemini-3.5-*` identifiers.
 
 ## Security notes
 

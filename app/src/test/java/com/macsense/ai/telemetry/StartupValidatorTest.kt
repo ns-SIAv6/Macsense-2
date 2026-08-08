@@ -36,4 +36,32 @@ class StartupValidatorTest {
         val result = StartupValidator.validateGeminiKey(secret)
         assertFalse(result.message.contains(secret))
     }
+
+    @Test
+    fun `valid Supabase configuration is exposed without placing the key in diagnostics`() {
+        val secret = "public-anon-key"
+        val result = StartupValidator.validateSupabase(
+            "https://example.supabase.co",
+            secret,
+            "user-access-token",
+        )
+
+        assertTrue(result.isConfigured)
+        assertEquals("https://example.supabase.co", result.baseUrl)
+        assertEquals(secret, result.anonKey)
+        assertEquals("user-access-token", result.userAccessToken)
+        assertFalse(result.message.contains(secret))
+    }
+
+    @Test
+    fun `unsafe Supabase configuration remains unavailable`() {
+        val result = StartupValidator.validateSupabase(
+            "http://example.supabase.co",
+            "service_role_secret",
+            "user-access-token",
+        )
+
+        assertFalse(result.isConfigured)
+        assertFalse(result.message.contains("service_role_secret"))
+    }
 }

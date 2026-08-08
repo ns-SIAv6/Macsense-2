@@ -24,4 +24,12 @@ class QuantizerTest {
         Quantizer.applyQuantize(pcm, onsets, 120.0, 4, 1.0, 48000)
         assertArrayEquals("source PCM was mutated", snapshot, pcm, 0.0)
     }
+
+    @Test fun `applyQuantize moves an onset when quantization is enabled`() {
+        val pcm = DoubleArray(48_000)
+        pcm[(0.51 * 48_000).toInt()] = 1.0
+        val result = Quantizer.applyQuantize(pcm, doubleArrayOf(0.51), 120.0, 4, 1.0, 48_000)
+        assertEquals(0.0, result[(0.51 * 48_000).toInt()], 0.0)
+        assertEquals(1.0, result[(0.5 * 48_000).toInt()], 0.0)
+    }
 }
