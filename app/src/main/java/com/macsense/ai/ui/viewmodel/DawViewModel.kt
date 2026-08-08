@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -198,6 +200,12 @@ class DawViewModel(
         }
     }
 
+    /**
+     * Serializes clip mutations so each Room write and its snapshot refresh publish atomically —
+     * without this, two concurrent mutations can interleave and a stale snapshot lands last.
+     */
+    private val clipMutex = Mutex()
+
     /** Reload every section's persisted clip list from Room. Safe no-op if no repository is wired. */
     fun refreshAllSectionClips() {
         val repo = repository ?: return
@@ -233,6 +241,7 @@ class DawViewModel(
     ) {
         val repo = repository ?: return
         viewModelScope.launch(Dispatchers.IO) {
+            clipMutex.withLock {
             repo.upsertClip(
                 ClipEntity(
                     id = clipId,
@@ -252,17 +261,20 @@ class DawViewModel(
                     this[sectionId] = refreshed
                 }
             }
+            }
         }
     }
 
     fun deleteClip(clipId: String, sectionId: String) {
         val repo = repository ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            repo.deleteClip(clipId)
-            val refreshed = repo.getClipsForSection(sectionId)
-            withContext(Dispatchers.Main) {
-                _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
-                    this[sectionId] = refreshed
+            clipMutex.withLock {
+                repo.deleteClip(clipId)
+                val refreshed = repo.getClipsForSection(sectionId)
+                withContext(Dispatchers.Main) {
+                    _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
+                        this[sectionId] = refreshed
+                    }
                 }
             }
         }
@@ -271,10 +283,12 @@ class DawViewModel(
     fun clearSectionClips(sectionId: String) {
         val repo = repository ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            repo.deleteClipsForSection(sectionId)
-            withContext(Dispatchers.Main) {
-                _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
-                    this[sectionId] = emptyList()
+            clipMutex.withLock {
+                repo.deleteClipsForSection(sectionId)
+                withContext(Dispatchers.Main) {
+                    _clipsBySection.value = _clipsBySection.value.toMutableMap().apply {
+                        this[sectionId] = emptyList()
+                    }
                 }
             }
         }

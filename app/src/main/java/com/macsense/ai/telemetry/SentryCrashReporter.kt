@@ -36,7 +36,7 @@ class SentryCrashReporter(private val context: Context) : CrashReporter {
  options.release = "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
  options.isEnableAutoSessionTracking = true
  // Screenshots can contain sensitive project/lyric data — disabled for privacy
- options.isAttachScreenshots = false
+ options.isAttachScreenshot = false
  options.isAttachViewHierarchy = false
  // Capture 100% of errors, 10% of performance traces
  options.sampleRate = 1.0
@@ -55,7 +55,7 @@ class SentryCrashReporter(private val context: Context) : CrashReporter {
  override fun recordException(throwable: Throwable, tag: String, message: String) {
  Sentry.withScope { scope ->
  scope.setTag("logger_tag", tag)
- scope.addBreadcrumb("[$tag] $message")
+ scope.addBreadcrumb(io.sentry.Breadcrumb.info("[$tag] $message"))
  Sentry.captureException(throwable)
  }
  }
